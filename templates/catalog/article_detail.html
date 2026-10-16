@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load documents static %}
+{% block title %}{{ article.title }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <p class="meta">{{ article.published_at }}</p>
+    <h1>{{ article.title }}</h1>
+    <p class="lede" style="color:#5b4630">{{ article.excerpt }}</p>
+    {% if article.body %}<div class="prose">{{ article.body }}</div>{% endif %}
+    {% if article.original_file %}
+      <p>
+        <a class="btn js-doc-window" href="{% url 'catalog:article_original' article.slug %}" target="_blank" rel="noopener">Оригинал</a>
+      </p>
+    {% endif %}
+    {% if article.receivers.all %}
+      <h2>Модели</h2>
+      <div class="chips">
+        {% for receiver in article.receivers.all %}
+          <a class="chip" href="{{ receiver.get_absolute_url }}">{{ receiver.name }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}
+{% block extra_js %}
+  {% if article.original_file %}
+    <script src="{% static 'js/document_window.js' %}"></script>
+  {% endif %}
+{% endblock %}

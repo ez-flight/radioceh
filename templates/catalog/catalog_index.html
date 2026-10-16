@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Радиоприёмники и радиолы — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="kicker">Каталог</p>
+  <h1>Радиоприёмники и радиолы</h1>
+  <div class="grid cards-3 catalog-cards">
+    {% for category in categories %}
+      <a class="card" href="{{ category.get_absolute_url }}">
+        {% if category.photo %}
+          <img class="card-photo" src="{{ category.photo.url }}" alt="{{ category.name }}">
+        {% else %}
+          <div class="thumb">{{ category.short_name }}</div>
+        {% endif %}
+        <div class="card-body">
+          <h3>{{ category.name }}</h3>
+          {% if category.n %}<p class="meta">{{ category.n }} моделей</p>{% endif %}
+        </div>
+      </a>
+    {% empty %}
+      <p>Категории пока скрыты.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

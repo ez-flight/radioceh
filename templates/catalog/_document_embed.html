@@ -1,0 +1,12 @@
+{% load documents %}
+{% with kind=file|file_kind %}
+  {% if kind == "pdf" %}
+    <iframe class="doc-frame" src="{{ file.url }}" title="{{ title }}"></iframe>
+  {% elif kind == "djvu" %}
+    <div class="djvu-frame" data-djvu-url="{{ file.url }}" data-djvu-name="{{ file.name }}"></div>
+  {% elif kind == "image" %}
+    <div class="doc-image-wrap">
+      <img class="doc-image" src="{{ file.url }}" alt="{{ title }}">
+    </div>
+  {% endif %}
+{% endwith %}

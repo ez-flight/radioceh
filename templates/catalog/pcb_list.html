@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Печатные платы LAY — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="title-row">
+    <div>
+      <p class="kicker">Проекты плат</p>
+      <h1>Платы LAY</h1>
+    </div>
+    {% if can_upload_boards %}
+      <a class="btn" href="{% url 'catalog:pcb_create' %}">Добавить проект</a>
+    {% endif %}
+  </div>
+  <p class="lede">Проекты печатных плат. Одна плата может относиться к нескольким приёмникам с одинаковым размером, например Вега-241 и Вега-341.</p>
+  <form class="filter-bar" method="get">
+    <label>Поиск
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Название, приёмник, микросхема">
+    </label>
+    <button class="btn" type="submit">Найти</button>
+  </form>
+  <div class="grid cards-3">
+    {% for pcb in pcbs %}
+      <a class="card" href="{{ pcb.get_absolute_url }}">
+        {% with photos=pcb.photos.all %}
+          {% if photos %}
+            <img class="card-photo" src="{{ photos.0.image.url }}" alt="{{ pcb.title }}">
+          {% endif %}
+        {% endwith %}
+        <div class="card-body">
+          {% with receivers=pcb.receivers.all %}
+            <h3>
+              {% for receiver in receivers %}{{ receiver.name }}{% if not forloop.last %}, {% endif %}{% empty %}{{ pcb.title }}{% endfor %}
+            </h3>
+            {% if receivers %}<p>{{ pcb.title }}</p>{% endif %}
+          {% endwith %}
+          <p class="meta">{{ pcb.get_kind_display }}{% if pcb.developed_at %} · {{ pcb.developed_at }}{% endif %}{% if pcb.version %} · {{ pcb.version }}{% endif %}</p>
+          {% if pcb.author_display %}<p class="meta">Автор: {{ pcb.author_display }}</p>{% endif %}
+          {% if pcb.chips.all %}
+            <p class="meta">МС: {% for chip in pcb.chips.all %}{{ chip.name }}{% if chip.chip_type %} ({{ chip.chip_type }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+          {% endif %}
+        </div>
+      </a>
+    {% empty %}
+      <p>Пока нет загруженных проектов плат.</p>
+    {% endfor %}
+  </div>
+  {% if page_obj.has_other_pages %}
+    <div class="pagination">
+      {% if page_obj.has_previous %}<a href="?{% if query %}{{ query }}&{% endif %}page={{ page_obj.previous_page_number }}">Назад</a>{% endif %}
+      <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a href="?{% if query %}{{ query }}&{% endif %}page={{ page_obj.next_page_number }}">Дальше</a>{% endif %}
+    </div>
+  {% endif %}
+  {% if shop_only_receivers %}
+    <h2 class="title-row">Модели с проектом в магазине</h2>
+    <div class="name-list">
+      {% for receiver in shop_only_receivers %}
+        <a href="{{ receiver.get_absolute_url }}">{{ receiver.name }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

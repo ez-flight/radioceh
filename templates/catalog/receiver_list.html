@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ current_category.name }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="kicker"><a href="{% url 'catalog:catalog_index' %}">Каталог</a></p>
+  <h1>{{ current_category.name }}</h1>
+
+  <form class="filter-bar" method="get">
+    <label>Поиск
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Сокол, ВЭФ, Горизонт">
+    </label>
+    <label>Завод
+      <select name="factory">
+        <option value="">Все</option>
+        {% for factory in factories %}
+          <option value="{{ factory.slug }}" {% if filters.factory == factory.slug %}selected{% endif %}>{{ factory.short_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Диапазон
+      <select name="band">
+        <option value="">Все</option>
+        {% for band in bands %}
+          {% if band.bands__code %}
+            <option value="{{ band.bands__code }}" {% if filters.band == band.bands__code %}selected{% endif %}>{{ band.bands__code }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>Десятилетие
+      <select name="decade">
+        <option value="">Все</option>
+        {% for decade in decades %}
+          <option value="{{ decade }}" {% if filters.decade == decade|stringformat:"s" %}selected{% endif %}>{{ decade }}-е</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Найти</button>
+  </form>
+
+  <div class="grid cards-4">
+    {% for receiver in receivers %}
+      <a class="card" href="{{ receiver.get_absolute_url }}">
+        {% if receiver.photo %}
+          <img class="card-photo" src="{{ receiver.photo.url }}" alt="{{ receiver.name }}">
+        {% else %}
+          <div class="thumb">{{ receiver.year_start|default:"модель" }}</div>
+        {% endif %}
+        <div class="card-body">
+          <div class="meta">{% if receiver.category %}{{ receiver.category.short_name }}{% endif %}{% if receiver.category and receiver.years_display %} · {% endif %}{{ receiver.years_display }}</div>
+          <h3>{{ receiver.name }}</h3>
+          <div class="chips">
+            {% for band in receiver.bands.all %}<span class="chip">{{ band.code }}</span>{% endfor %}
+          </div>
+        </div>
+      </a>
+    {% empty %}
+      <p>Ничего не найдено. Снимите фильтры или попробуйте другое имя.</p>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.has_other_pages %}
+    <div class="pagination">
+      {% if page_obj.has_previous %}<a href="?{% if query %}{{ query }}&{% endif %}page={{ page_obj.previous_page_number }}">Назад</a>{% endif %}
+      <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a href="?{% if query %}{{ query }}&{% endif %}page={{ page_obj.next_page_number }}">Дальше</a>{% endif %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

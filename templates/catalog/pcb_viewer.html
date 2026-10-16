@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Радиоцех</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=lay1">
+</head>
+<body class="doc-window">
+  <div class="doc-window-page">
+    <header class="doc-window-bar">
+      <p>{{ title }}</p>
+      <a href="{% url 'catalog:pcb_download' pcb.pk %}">Скачать</a>
+      <button type="button" onclick="window.close()">Закрыть</button>
+    </header>
+    {% if svg %}
+      <div class="lay-viewer" data-lay-viewer>
+        <div class="lay-toolbar">
+          <div class="lay-side" role="group" aria-label="Сторона платы">
+            <button type="button" class="active" data-lay-side="top">Вид сверху</button>
+            <button type="button" data-lay-side="bottom">Вид снизу</button>
+          </div>
+          <div class="lay-layers" data-lay-layers aria-label="Слои"></div>
+          <div class="lay-zoom" role="group" aria-label="Масштаб">
+            <button type="button" data-lay-zoom="out" aria-label="Уменьшить">−</button>
+            <button type="button" data-lay-zoom="fit">Вписать</button>
+            <button type="button" data-lay-zoom="in" aria-label="Увеличить">+</button>
+          </div>
+        </div>
+        <div class="lay-stage" data-lay-stage>{{ svg|safe }}</div>
+        <p class="lay-hint">Колесо мыши — масштаб, перетаскивание — сдвиг. Размеры в миллиметрах.</p>
+      </div>
+    {% else %}
+      <div class="lay-empty">
+        <p>Не удалось прочитать файл платы. Поддерживаются файлы Sprint Layout 5 и 6 (.lay, .lay6).</p>
+        <p>Файл можно скачать и открыть в Sprint Layout.</p>
+      </div>
+    {% endif %}
+  </div>
+  {% if svg %}<script src="{% static 'js/pcb_viewer.js' %}?v=lay1"></script>{% endif %}
+</body>
+</html>

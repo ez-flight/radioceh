@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Книги — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="kicker">Полка</p>
+  <h1>Книги и справочники</h1>
+  <div class="grid cards-3">
+    {% for book in books %}
+      <a class="card" href="{{ book.get_absolute_url }}">
+        <div class="card-body">
+          <div class="meta">{{ book.year }} · {{ book.publisher }}</div>
+          <h3>{{ book.title }}</h3>
+          <p>{{ book.authors }}</p>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

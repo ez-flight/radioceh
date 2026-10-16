@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% load documents humanize static %}
+{% block title %}{{ receiver.name }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="title-row">
+    <div>
+      <p class="kicker">{% if receiver.category %}<a href="{{ receiver.category.get_absolute_url }}">{{ receiver.category.name }}</a>{% else %}Каталог{% endif %}</p>
+      <h1>{{ receiver.name }}</h1>
+    </div>
+    {% if can_edit_catalog and receiver.is_hidden %}<span class="chip">скрыт</span>{% endif %}
+  </div>
+  {% include "catalog/_receiver_staff_tabs.html" with tab="card" %}
+
+  <div class="layout-2">
+    <article class="detail">
+      {% if receiver.photo %}
+        <img class="receiver-photo" src="{{ receiver.photo.url }}" alt="Фото карточки {{ receiver.name }}">
+      {% endif %}
+      {% if receiver.board_drawing or receiver.manual %}
+        <div class="file-links">
+          {% if receiver.board_drawing %}
+            <a class="btn secondary js-doc-window" href="{% url 'catalog:receiver_drawing' receiver.category.slug receiver.slug %}" target="_blank" rel="noopener">Рисунок платы</a>
+          {% endif %}
+          {% if receiver.manual %}
+            <a class="btn secondary js-doc-window" href="{% url 'catalog:receiver_manual' receiver.category.slug receiver.slug %}" target="_blank" rel="noopener">Инструкция</a>
+          {% endif %}
+        </div>
+      {% endif %}
+      <div class="meta">
+        {% if receiver.years_display %}{{ receiver.years_display }}{% endif %}
+        {% if receiver.is_prototype %}<span class="chip">опытный</span>{% endif %}
+      </div>
+      {% if receiver.bands.all %}
+        <div class="chips">
+          {% for band in receiver.bands.all %}<span class="chip">{{ band.code }} — {{ band.name }}</span>{% endfor %}
+          {% if receiver.bands_note %}<span class="chip">{{ receiver.bands_note }}</span>{% endif %}
+        </div>
+      {% endif %}
+
+      {% if receiver.description %}
+        <h2>Описание</h2>
+        <p class="prose">{{ receiver.description }}</p>
+      {% endif %}
+      {% if receiver.notes and receiver.notes != receiver.description %}
+        <h2>Примечание</h2>
+        <p class="prose">{{ receiver.notes }}</p>
+      {% endif %}
+
+      {% if receiver.years_display or receiver.produced_count or receiver.factories.all or receiver.bands.all or receiver.sensitivity or receiver.selectivity or receiver.output_power or receiver.frequency_response or receiver.power_supply or receiver.dimensions or receiver.weight or receiver.transistor_count or receiver.receiver_class or receiver.original_price or receiver.source_url %}
+        <h2>Характеристики</h2>
+        <table class="spec-table">
+          {% if receiver.category %}<tr><th>Категория</th><td>{{ receiver.category.name }}</td></tr>{% endif %}
+          {% if receiver.years_display %}<tr><th>Годы выпуска</th><td>{{ receiver.years_display }}</td></tr>{% endif %}
+          {% if receiver.produced_count %}<tr><th>Выпущено</th><td>{{ receiver.produced_count|intcomma }} шт.</td></tr>{% endif %}
+          {% if receiver.factories.all %}
+            <tr><th>Заводы</th><td>
+              {% for factory in receiver.factories.all %}
+                <a href="{{ factory.get_absolute_url }}">{{ factory.name }}</a>{% if factory.city_then %} ({{ factory.city_then }}){% endif %}{% if not forloop.last %}<br>{% endif %}
+              {% endfor %}
+            </td></tr>
+          {% endif %}
+          {% if receiver.bands.all %}
+            <tr><th>Диапазоны</th><td>{% for band in receiver.bands.all %}{{ band.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+          {% endif %}
+          {% if receiver.bands_note %}<tr><th>Уточнение диапазонов</th><td>{{ receiver.bands_note }}</td></tr>{% endif %}
+          {% if receiver.sensitivity %}<tr><th>Чувствительность</th><td>{{ receiver.sensitivity }}</td></tr>{% endif %}
+          {% if receiver.selectivity %}<tr><th>Избирательность</th><td>{{ receiver.selectivity }}</td></tr>{% endif %}
+          {% if receiver.output_power %}<tr><th>Выходная мощность</th><td>{{ receiver.output_power }}</td></tr>{% endif %}
+          {% if receiver.frequency_response %}<tr><th>Полоса частот</th><td>{{ receiver.frequency_response }}</td></tr>{% endif %}
+          {% if receiver.power_supply %}<tr><th>Питание</th><td>{{ receiver.power_supply }}</td></tr>{% endif %}
+          {% if receiver.dimensions %}<tr><th>Габариты</th><td>{{ receiver.dimensions }}</td></tr>{% endif %}
+          {% if receiver.weight %}<tr><th>Масса</th><td>{{ receiver.weight }}</td></tr>{% endif %}
+          {% if receiver.transistor_count %}<tr><th>Транзисторы</th><td>{{ receiver.transistor_count }}</td></tr>{% endif %}
+          {% if receiver.receiver_class %}<tr><th>Класс</th><td>{{ receiver.receiver_class }}</td></tr>{% endif %}
+          {% if receiver.original_price %}<tr><th>Цена в СССР</th><td>{{ receiver.original_price }}</td></tr>{% endif %}
+          {% if receiver.source_url %}<tr><th>Источник</th><td><a href="{{ receiver.source_url }}" target="_blank" rel="noopener">{{ receiver.source_url|cut:"https://"|cut:"http://"|truncatechars:48 }}</a></td></tr>{% endif %}
+        </table>
+      {% endif %}
+    </article>
+
+    <aside class="grid">
+      {% if receiver.pcb_files.all %}
+        <div class="paper">
+          <h2>Печатные платы LAY</h2>
+          {% for pcb in receiver.pcb_files.all %}
+            <p>
+              <strong><a href="{{ pcb.get_absolute_url }}">{{ pcb.title }}</a></strong><br>
+              {{ pcb.get_kind_display }}{% if pcb.version %} · {{ pcb.version }}{% endif %}{% if pcb.developed_at %} · {{ pcb.developed_at }}{% endif %}<br>
+              {% if pcb.chips.all %}<span class="meta">МС: {% for chip in pcb.chips.all %}{{ chip.name }}{% if chip.chip_type %} ({{ chip.chip_type }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</span><br>{% endif %}
+              {% if pcb.notes %}<span class="meta">{{ pcb.notes }}</span><br>{% endif %}
+              {% if pcb.is_free %}
+                <a href="{% url 'catalog:pcb_download' pcb.pk %}">скачать</a>
+              {% else %}
+                в комплекте проекта
+              {% endif %}
+            </p>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if receiver.products.all %}
+        <div class="paper">
+          <h2>Проекты в магазине</h2>
+          {% for product in receiver.products.all %}
+            <p><a href="{{ product.get_absolute_url }}">{{ product.title }}</a> — {{ product.price }} ₽</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </aside>
+  </div>
+
+  {% if receiver.articles.all %}
+    <h2>Статьи</h2>
+    <div class="grid cards-3">
+      {% for article in receiver.articles.all %}
+        <a class="card" href="{{ article.get_absolute_url }}"><div class="card-body"><h3>{{ article.title }}</h3><p class="meta">{{ article.published_at }}{% if article.original_file %} · оригинал{% endif %}</p></div></a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if receiver.books.all %}
+    <h2>Книги</h2>
+    <div class="grid cards-3">
+      {% for book in receiver.books.all %}
+        <a class="card" href="{{ book.get_absolute_url }}"><div class="card-body"><h3>{{ book.title }}</h3><p class="meta">{{ book.authors }}{% if book.year %} · {{ book.year }}{% endif %}</p></div></a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
+{% block extra_js %}
+  {% if receiver.manual or receiver.board_drawing %}
+    <script src="{% static 'js/document_window.js' %}"></script>
+  {% endif %}
+{% endblock %}

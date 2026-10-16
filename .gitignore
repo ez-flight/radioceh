@@ -1,0 +1,30 @@
+# Окружение и секреты
+.venv/
+.env
+*.log
+
+# Локальная база и бинарники Postgres
+.pg/
+.pgdata/
+db.sqlite3
+backups/
+
+# Загрузки пользователей и закрытые файлы плат
+media/
+private/
+
+# Сборка и кэш
+staticfiles/
+__pycache__/
+*.py[cod]
+
+# Локальное состояние скриптов импорта
+data/enrich_progress.json
+
+# Инструменты
+.claude/
+
+# Сторонние исходники (страницы rw6ase.narod.ru, справочники): в репозитории только JSON для seed_catalog
+data/*.html
+data/*.pdf
+/*.pdf

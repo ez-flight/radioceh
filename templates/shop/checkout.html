@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Оформление — Радиоцех{% endblock %}
+{% block content %}
+<section class="section layout-2">
+  <article class="detail">
+    <h1>Заявка на заказ</h1>
+    <p>Онлайн-оплаты нет: оставляете контакты, мастерская подтверждает наличие файлов или комплекта.</p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label>Имя
+        <input name="customer_name" required maxlength="160" value="{{ form.customer_name.value|default:'' }}">
+      </label>
+      {{ form.customer_name.errors }}
+      <label>Email
+        <input type="email" name="email" required maxlength="254" value="{{ form.email.value|default:'' }}">
+      </label>
+      {{ form.email.errors }}
+      <label>Телефон
+        <input name="phone" maxlength="40" value="{{ form.phone.value|default:'' }}">
+      </label>
+      {{ form.phone.errors }}
+      <label>Комментарий
+        <textarea name="comment" rows="4" maxlength="2000" placeholder="Нужна только плата или весь комплект с описанием">{{ form.comment.value|default:'' }}</textarea>
+      </label>
+      {{ form.comment.errors }}
+      <button class="btn" type="submit" style="margin-top:16px">Отправить заявку</button>
+    </form>
+  </article>
+  <aside class="paper">
+    <h2>Состав</h2>
+    {% for item in items %}
+      <p>{{ item.product.title }} × {{ item.quantity }} — {{ item.subtotal }} ₽</p>
+    {% endfor %}
+    <p class="price">{{ cart.total }} ₽</p>
+  </aside>
+</section>
+{% endblock %}

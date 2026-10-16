@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Мои заказы — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <h1>Мои заказы</h1>
+    {% for order in orders %}
+      <p><strong>№{{ order.pk }}</strong> · {{ order.created_at }} · {{ order.get_status_display }} · {{ order.total }} ₽</p>
+      <ul>
+        {% for item in order.items.all %}
+          <li>{{ item.product.title }} × {{ item.quantity }}</li>
+        {% endfor %}
+      </ul>
+    {% empty %}
+      <p>Заявок ещё не было.</p>
+    {% endfor %}
+  </article>
+</section>
+{% endblock %}

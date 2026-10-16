@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Статьи — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="kicker">Журнал мастерской</p>
+  <h1>Статьи</h1>
+  <div class="grid cards-3">
+    {% for article in articles %}
+      <a class="card" href="{{ article.get_absolute_url }}">
+        <div class="card-body">
+          <div class="meta">{{ article.published_at }}{% if article.original_file %} · есть оригинал{% endif %}</div>
+          <h3>{{ article.title }}</h3>
+          {% if article.excerpt %}<p>{{ article.excerpt }}</p>{% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

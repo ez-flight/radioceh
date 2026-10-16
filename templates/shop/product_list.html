@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Магазин — Радиоцех{% endblock %}
+{% block content %}
+<section class="section shop-vitrine">
+  <p class="kicker">Витрина</p>
+  <h1>Проекты модернизации</h1>
+  <form class="filter-bar" method="get">
+    <label>Поиск
+      <input type="search" name="q" value="{{ filters.q }}">
+    </label>
+    <label>Тип
+      <select name="kind">
+        <option value="">Все</option>
+        {% for value, label in kinds %}
+          <option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Показать</button>
+  </form>
+  <div class="grid product-grid">
+    {% for product in products %}
+      <a class="card" href="{{ product.get_absolute_url }}">
+        <div class="thumb modern">{{ product.get_kind_display }}</div>
+        <div class="card-body">
+          {% if product.receiver %}<div class="meta">{{ product.receiver.name }}</div>{% endif %}
+          <h3>{{ product.title }}</h3>
+          {% if product.description %}<p>{{ product.description|truncatewords:22 }}</p>{% endif %}
+          <div class="price">{{ product.price }} ₽</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

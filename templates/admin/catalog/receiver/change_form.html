@@ -1,0 +1,21 @@
+{% extends "admin/change_form.html" %}
+{% load admin_urls %}
+
+{% block object-tools-items %}
+  {% if site_edit_url %}
+    <li><a href="{{ site_edit_url }}" class="viewsitelink">Редактировать на сайте</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+  {% if change %}
+    <nav class="category-tabs" aria-label="Редактирование приёмника">
+      <a href="{% url opts|admin_urlname:'change' original.pk|admin_urlquote %}" class="active">Запись в админке</a>
+      {% if site_edit_url %}
+        <a href="{{ site_edit_url }}">Редактирование на сайте</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

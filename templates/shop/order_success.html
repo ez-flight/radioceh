@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Заявка №{{ order.pk }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <p class="kicker">Готово</p>
+    <h1>Заявка №{{ order.pk }} принята</h1>
+    <p>Мы напишем на {{ order.email }}. Статус заказа можно смотреть в админке или в разделе «Заказы», если вы вошли в аккаунт.</p>
+    <p class="price">Сумма: {{ order.total }} ₽</p>
+    <a class="btn" href="{% url 'shop:product_list' %}">Вернуться в магазин</a>
+  </article>
+</section>
+{% endblock %}

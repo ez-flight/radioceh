@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <p class="meta">{{ book.authors }} · {{ book.year }} · {{ book.publisher }}</p>
+    <h1>{{ book.title }}</h1>
+    <p class="prose">{{ book.description }}</p>
+    <h2>Упоминаемые модели</h2>
+    <div class="chips">
+      {% for receiver in book.receivers.all %}
+        <a class="chip" href="{{ receiver.get_absolute_url }}">{{ receiver.name }}</a>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

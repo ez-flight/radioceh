@@ -1,0 +1,23 @@
+{% load static documents %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Радиоцех</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=doc3">
+</head>
+<body class="doc-window">
+  <div class="doc-window-page">
+    <header class="doc-window-bar">
+      <p>{{ title }}</p>
+      <a href="{{ file.url }}">Скачать</a>
+      <button type="button" onclick="window.close()">Закрыть</button>
+    </header>
+    {% include "catalog/_document_embed.html" %}
+  </div>
+  {% if file|file_kind == "djvu" %}
+    {% include "catalog/_document_viewer_js.html" %}
+  {% endif %}
+</body>
+</html>

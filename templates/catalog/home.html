@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Радиоцех — модернизация советских приёмников{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="kicker">Мастерская и каталог</p>
+    <h1 class="display">Печатные платы для живых советских приёмников</h1>
+    <p class="lede">Каталог моделей, заводов, статей и книг — и проекты модернизации с файлами LAY: оригинал шасси и плата на современной элементной базе.</p>
+    <div class="hero-actions">
+      <a class="btn" href="{% url 'shop:product_list' %}">Смотреть проекты</a>
+      <a class="btn secondary" href="{% url 'catalog:catalog_index' %}">Открыть каталог</a>
+    </div>
+    <div class="stats">
+      <div><b>{{ stats.receivers }}</b>приёмников</div>
+      <div><b>{{ stats.factories }}</b>заводов</div>
+      <div><b>{{ stats.pcbs }}</b>LAY-файлов</div>
+      <div><b>{{ stats.articles }}</b>статей</div>
+    </div>
+  </div>
+  <aside class="hero-card">
+    <p class="kicker" style="color:#8a5a22">Как это устроено</p>
+    <h2>От карточки модели к плате</h2>
+    <ol>
+      <li>Находите приёмник в каталоге — годы, завод, диапазоны.</li>
+      <li>Смотрите статьи, книги и связанные проекты.</li>
+      <li>Скачиваете оригинальный LAY или берёте современную плату в магазине.</li>
+    </ol>
+  </aside>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <p class="kicker">Витрина</p>
+      <h2>Проекты модернизации</h2>
+    </div>
+    <a class="ghost" href="{% url 'shop:product_list' %}">Все товары</a>
+  </div>
+  <div class="grid cards-4">
+    {% for product in products %}
+      <a class="card" href="{{ product.get_absolute_url }}">
+        <div class="thumb modern">{{ product.get_kind_display }}</div>
+        <div class="card-body">
+          <div class="meta">{{ product.receiver.name|default:"Общий проект" }}</div>
+          <h3>{{ product.title }}</h3>
+          <div class="price">{{ product.price }} ₽</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <p class="kicker">Каталог</p>
+      <h2>Знаковые модели</h2>
+    </div>
+    <a class="ghost" href="{% url 'catalog:catalog_index' %}">Все категории</a>
+  </div>
+  <div class="grid cards-4">
+    {% for receiver in featured %}
+      <a class="card" href="{{ receiver.get_absolute_url }}">
+        <div class="thumb">{{ receiver.year_start|default:"СССР" }}</div>
+        <div class="card-body">
+          <div class="meta">
+            {% for factory in receiver.factories.all %}{{ factory.short_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </div>
+          <h3>{{ receiver.name }}</h3>
+          <div class="chips">
+            {% for band in receiver.bands.all %}<span class="chip">{{ band.code }}</span>{% endfor %}
+          </div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <p class="kicker">Журнал</p>
+      <h2>Статьи по ремонту и платам</h2>
+    </div>
+    <a class="ghost" href="{% url 'catalog:article_list' %}">Все статьи</a>
+  </div>
+  <div class="grid cards-3">
+    {% for article in latest_articles %}
+      <a class="card" href="{{ article.get_absolute_url }}">
+        <div class="card-body">
+          <div class="meta">{{ article.published_at }}</div>
+          <h3>{{ article.title }}</h3>
+          <p>{{ article.excerpt }}</p>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

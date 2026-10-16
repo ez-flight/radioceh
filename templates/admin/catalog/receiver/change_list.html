@@ -1,0 +1,15 @@
+{% extends "admin/change_list.html" %}
+
+{% block search %}
+  <nav class="category-tabs" aria-label="Категории приёмников">
+    <a href="?{{ all_tab.query }}"{% if all_tab.active %} class="active"{% endif %}>
+      {{ all_tab.label }} <span>{{ all_tab.count }}</span>
+    </a>
+    {% for tab in category_tabs %}
+      <a href="?{{ tab.query }}"{% if tab.active %} class="active"{% endif %}>
+        {{ tab.label }} <span>{{ tab.count }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+  {{ block.super }}
+{% endblock %}

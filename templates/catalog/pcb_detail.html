@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% load documents static %}
+{% block title %}{{ pcb.title }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section layout-2">
+  <article class="detail">
+    <p class="kicker">{{ pcb.get_kind_display }}</p>
+    <h1>{{ pcb.title }}</h1>
+    {% with photos=pcb.photos.all %}
+      {% if photos %}
+        <div class="carousel" data-carousel>
+          <div class="carousel-viewport">
+            <div class="carousel-track">
+              {% for photo in photos %}
+                <figure class="carousel-slide">
+                  <img src="{{ photo.image.url }}" alt="Фото проекта {{ pcb.title }}">
+                </figure>
+              {% endfor %}
+            </div>
+          </div>
+          {% if photos|length > 1 %}
+            <button type="button" class="carousel-btn prev" data-carousel-prev aria-label="Предыдущее фото">‹</button>
+            <button type="button" class="carousel-btn next" data-carousel-next aria-label="Следующее фото">›</button>
+            <div class="carousel-dots" role="tablist" aria-label="Фото проекта">
+              {% for photo in photos %}
+                <button type="button" class="carousel-dot{% if forloop.first %} active{% endif %}" data-carousel-dot="{{ forloop.counter0 }}" aria-label="Фото {{ forloop.counter }}"></button>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% if lay_preview %}
+      <a class="pcb-preview js-doc-window" href="{% url 'catalog:pcb_preview' pcb.pk %}" title="Открыть просмотр платы">
+        <img src="{% url 'catalog:pcb_svg' pcb.pk %}" alt="Рисунок платы {{ pcb.title }}" loading="lazy">
+      </a>
+    {% endif %}
+    <table class="spec-table">
+      <tr><th>Приёмники</th><td>
+        {% for receiver in pcb.receivers.all %}
+          <a href="{{ receiver.get_absolute_url }}">{{ receiver.name }}</a>{% if not forloop.last %}, {% endif %}
+        {% empty %}—{% endfor %}
+      </td></tr>
+      {% if pcb.chips.all %}
+        <tr><th>Микросхемы</th><td>{% for chip in pcb.chips.all %}{{ chip.name }}{% if chip.chip_type %} — {{ chip.chip_type }}{% endif %}{% if chip.manufacturer %} ({{ chip.manufacturer }}){% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td></tr>
+      {% endif %}
+      {% if pcb.version %}<tr><th>Версия</th><td>{{ pcb.version }}</td></tr>{% endif %}
+      {% if pcb.developed_at %}<tr><th>Дата разработки</th><td>{{ pcb.developed_at }}</td></tr>{% endif %}
+      {% if pcb.source_url %}
+        <tr><th>Источник</th><td><a href="{{ pcb.source_url }}" target="_blank" rel="noopener">Статья</a></td></tr>
+      {% endif %}
+      {% if pcb.author_display %}
+        <tr><th>Автор</th><td>{{ pcb.author_display }}{% if pcb.author_id %} <span class="chip">на сайте</span>{% endif %}</td></tr>
+      {% endif %}
+    </table>
+    {% if pcb.notes %}
+      <h2>Комментарий</h2>
+      <p class="prose">{{ pcb.notes }}</p>
+    {% endif %}
+    <p class="file-links">
+      {% if can_access_file %}
+        {% if pcb.file|file_kind == "pdf" or pcb.file|file_kind == "djvu" or lay_preview %}
+          <a class="btn js-doc-window" href="{% url 'catalog:pcb_preview' pcb.pk %}">Смотреть</a>
+        {% endif %}
+        <a class="btn" href="{% url 'catalog:pcb_download' pcb.pk %}">Скачать файл</a>
+      {% else %}
+        <span class="meta">Файл в комплекте проекта</span>
+      {% endif %}
+      <a class="btn secondary" href="{% url 'catalog:pcb_list' %}">Ко всем платам</a>
+    </p>
+  </article>
+  <aside class="grid">
+    {% if pcb.products.all %}
+      <div class="paper">
+        <h2>В магазине</h2>
+        {% for product in pcb.products.all %}
+          {% if product.is_active %}
+            <p><a href="{{ product.get_absolute_url }}">{{ product.title }}</a> — {{ product.price }} ₽</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </aside>
+</section>
+{% endblock %}
+{% block extra_js %}
+  {% if pcb.photos.all %}
+    <script src="{% static 'js/carousel.js' %}"></script>
+  {% endif %}
+  {% if can_access_file and pcb.file|file_kind == "pdf" or can_access_file and pcb.file|file_kind == "djvu" or lay_preview %}
+    <script src="{% static 'js/document_window.js' %}"></script>
+  {% endif %}
+{% endblock %}

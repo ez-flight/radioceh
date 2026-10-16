@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Добавить проект платы — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="form-card pcb-form">
+    <p class="kicker">Платы LAY</p>
+    <h1>Новый проект платы</h1>
+    <p>Укажите один или несколько приёмников, если размер платы совпадает. Микросхемы необязательны — список ведёт администратор.</p>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+      <label>{{ form.title.label }}
+        {{ form.title }}
+        {{ form.title.errors }}
+      </label>
+      <div class="form-row">
+        <label>{{ form.kind.label }}
+          {{ form.kind }}
+          {{ form.kind.errors }}
+        </label>
+        <label>{{ form.version.label }}
+          {{ form.version }}
+          {{ form.version.errors }}
+        </label>
+        <label>{{ form.developed_at.label }}
+          {{ form.developed_at }}
+          {{ form.developed_at.errors }}
+        </label>
+      </div>
+      <label>{{ form.file.label }}
+        {{ form.file }}
+        <span class="meta">{{ form.file.help_text }}</span>
+        {{ form.file.errors }}
+      </label>
+      <fieldset class="picker">
+        <legend>{{ form.receivers.label }}</legend>
+        <p class="meta">{{ form.receivers.help_text }}</p>
+        <input type="search" class="picker-filter" placeholder="Найти приёмник" data-picker="receivers">
+        <div class="picker-list" id="picker-receivers">{{ form.receivers }}</div>
+        {{ form.receivers.errors }}
+      </fieldset>
+      <fieldset class="picker">
+        <legend>{{ form.chips.label }}</legend>
+        <p class="meta">{{ form.chips.help_text }}</p>
+        <input type="search" class="picker-filter" placeholder="Найти микросхему" data-picker="chips">
+        <div class="picker-list" id="picker-chips">{{ form.chips }}</div>
+        {{ form.chips.errors }}
+      </fieldset>
+      <fieldset>
+        <legend>Сторонний ресурс</legend>
+        <p class="meta">Заполните, если плата скачана со статьи или форума, а не нарисована вами.</p>
+        <label>{{ form.source_url.label }}
+          {{ form.source_url }}
+          <span class="meta">{{ form.source_url.help_text }}</span>
+          {{ form.source_url.errors }}
+        </label>
+        <label>{{ form.author_name.label }}
+          {{ form.author_name }}
+          <span class="meta">{{ form.author_name.help_text }}</span>
+          {{ form.author_name.errors }}
+        </label>
+      </fieldset>
+      <label>{{ form.photos.label }}
+        {{ form.photos }}
+        <span class="meta">{{ form.photos.help_text }}</span>
+        {{ form.photos.errors }}
+      </label>
+      <label>{{ form.notes.label }}
+        {{ form.notes }}
+        {{ form.notes.errors }}
+      </label>
+      <label class="check-line">{{ form.is_free }} {{ form.is_free.label }}</label>
+      <div class="file-links">
+        <button class="btn" type="submit">Сохранить проект</button>
+        <a class="btn secondary" href="{% url 'catalog:pcb_list' %}">Отмена</a>
+      </div>
+    </form>
+  </article>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+  document.querySelectorAll(".picker-filter").forEach((input) => {
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      const list = document.getElementById("picker-" + input.dataset.picker);
+      if (!list) return;
+      list.querySelectorAll("label").forEach((item) => {
+        if (!item.querySelector("input")) return;
+        item.closest("li, div").hidden = Boolean(query) && !item.textContent.toLowerCase().includes(query);
+      });
+      list.querySelectorAll(":scope > * > * > div, :scope > ul > li").forEach((group) => {
+        const options = group.querySelectorAll("label:has(input)");
+        if (!options.length) return;
+        const visible = [...options].some((el) => !el.closest("li, div").hidden);
+        group.hidden = Boolean(query) && !visible;
+      });
+    });
+  });
+</script>
+{% endblock %}

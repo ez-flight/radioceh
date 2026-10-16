@@ -1,0 +1,6 @@
+{% if can_edit_catalog and receiver.category_id %}
+<nav class="page-tabs" aria-label="Карточка и редактирование">
+  <a href="{{ receiver.get_absolute_url }}"{% if tab == "card" %} class="active"{% endif %}>Карточка</a>
+  <a href="{{ receiver.get_edit_url }}"{% if tab == "edit" %} class="active"{% endif %}>Редактирование</a>
+</nav>
+{% endif %}

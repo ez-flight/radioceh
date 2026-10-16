@@ -1,0 +1,114 @@
+[
+  {
+    "code": "detektor",
+    "name": "Радиоприёмники детекторные",
+    "short_name": "Детекторные",
+    "slug": "detektornye",
+    "sort_order": 1
+  },
+  {
+    "code": "lamp",
+    "name": "Радиоприёмники ламповые стационарные",
+    "short_name": "Ламповые стационарные",
+    "slug": "lampovye-statsionarnye",
+    "sort_order": 2
+  },
+  {
+    "code": "ps_suw",
+    "name": "Радиоприёмники сувенирные стационарные",
+    "short_name": "Сувенирные стационарные",
+    "slug": "suvenirnye-statsionarnye",
+    "sort_order": 3
+  },
+  {
+    "code": "lamp_bat",
+    "name": "Радиоприёмники ламповые батарейные",
+    "short_name": "Ламповые батарейные",
+    "slug": "lampovye-batareynye",
+    "sort_order": 4
+  },
+  {
+    "code": "transl",
+    "name": "Радиоприёмники ламповые и п/п трансляционные",
+    "short_name": "Трансляционные",
+    "slug": "translyatsionnye",
+    "sort_order": 5
+  },
+  {
+    "code": "pp_suw",
+    "name": "Радиоприёмники сувенирные носимые",
+    "short_name": "Сувенирные носимые",
+    "slug": "suvenirnye-nosimye",
+    "sort_order": 6
+  },
+  {
+    "code": "awto_lamp",
+    "name": "Радиоприёмники ламповые для авто",
+    "short_name": "Ламповые авто",
+    "slug": "lampovye-avto",
+    "sort_order": 7
+  },
+  {
+    "code": "ps",
+    "name": "Радиоприёмники на п/п стационарные",
+    "short_name": "П/п стационарные",
+    "slug": "pp-statsionarnye",
+    "sort_order": 8
+  },
+  {
+    "code": "pp",
+    "name": "Радиоприёмники на п/п носимые",
+    "short_name": "П/п носимые",
+    "slug": "pp-nosimye",
+    "sort_order": 9
+  },
+  {
+    "code": "awto_pp",
+    "name": "Радиоприёмники на п/п для авто",
+    "short_name": "П/п авто",
+    "slug": "pp-avto",
+    "sort_order": 10
+  },
+  {
+    "code": "rl_ps",
+    "name": "Радиолы на п/п стационарные",
+    "short_name": "Радиолы п/п",
+    "slug": "radioly-pp",
+    "sort_order": 11
+  },
+  {
+    "code": "pp_det",
+    "name": "Радиоприёмники детские носимые",
+    "short_name": "Детские носимые",
+    "slug": "detskie-nosimye",
+    "sort_order": 12
+  },
+  {
+    "code": "rl_lamp",
+    "name": "Радиолы ламповые стационарные",
+    "short_name": "Радиолы ламповые",
+    "slug": "radioly-lampovye",
+    "sort_order": 13
+  },
+  {
+    "code": "tuner",
+    "name": "Тюнеры на п/п стационарные",
+    "short_name": "Тюнеры п/п",
+    "slug": "tunery-pp",
+    "sort_order": 14
+  },
+  {
+    "code": "efir",
+    "name": "Эфирные радиоточки на п/п",
+    "short_name": "Эфирные радиоточки",
+    "slug": "efirnye-radiotochki",
+    "sort_order": 15
+  },
+  {
+    "code": "konstr",
+    "name": "Радиоконструкторы",
+    "short_name": "Радиоконструкторы",
+    "slug": "radiokonstruktory",
+    "sort_order": 16
+  }
+]

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Корзина — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <h1>Корзина</h1>
+    {% for item in cart %}
+      <div class="layout-2" style="align-items:center;margin-bottom:12px">
+        <div>
+          <a href="{{ item.product.get_absolute_url }}"><strong>{{ item.product.title }}</strong></a>
+          <p class="meta">{{ item.quantity }} × {{ item.price }} ₽</p>
+        </div>
+        <div>
+          <span class="price">{{ item.subtotal }} ₽</span>
+          <form method="post" action="{% url 'shop:cart_remove' item.product.slug %}" style="display:inline">
+            {% csrf_token %}
+            <button class="ghost" type="submit">Убрать</button>
+          </form>
+        </div>
+      </div>
+    {% empty %}
+      <p>Пока пусто. Загляните в <a href="{% url 'shop:product_list' %}">магазин</a>.</p>
+    {% endfor %}
+    {% if cart|length %}
+      <p class="price">Итого: {{ cart.total }} ₽</p>
+      <a class="btn" href="{% url 'shop:checkout' %}">Оформить заявку</a>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

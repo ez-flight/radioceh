@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Страница не найдена — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <article class="detail">
+    <p class="kicker">Ошибка 404</p>
+    <h1>Такой страницы нет</h1>
+    <p>Возможно, ссылка устарела или карточка скрыта. Попробуйте найти модель в каталоге.</p>
+    <p>
+      <a class="btn" href="{% url 'catalog:catalog_index' %}">Каталог</a>
+      <a class="btn secondary" href="{% url 'home' %}">На главную</a>
+    </p>
+  </article>
+</section>
+{% endblock %}

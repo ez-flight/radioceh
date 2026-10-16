@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Редактирование — {{ receiver.name }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="title-row">
+    <div>
+      <p class="kicker">{% if receiver.category %}<a href="{{ receiver.category.get_absolute_url }}">{{ receiver.category.name }}</a>{% else %}Каталог{% endif %}</p>
+      <h1>{{ receiver.name }}</h1>
+    </div>
+  </div>
+  {% include "catalog/_receiver_staff_tabs.html" with tab="edit" %}
+
+  <article class="form-card pcb-form">
+    <p>Поля карточки приёмника. Статьи, книги и товары остаются в записи админки.</p>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+      <div class="form-row-2">
+        <label>{{ form.name.label }}
+          {{ form.name }}
+          {{ form.name.errors }}
+        </label>
+        <label>{{ form.slug.label }}
+          {{ form.slug }}
+          {{ form.slug.errors }}
+        </label>
+      </div>
+      <label>{{ form.category.label }}
+        {{ form.category }}
+        {{ form.category.errors }}
+      </label>
+      <div class="form-row">
+        <label>{{ form.year_start.label }}
+          {{ form.year_start }}
+          {{ form.year_start.errors }}
+        </label>
+        <label>{{ form.year_end.label }}
+          {{ form.year_end }}
+          {{ form.year_end.errors }}
+        </label>
+        <label>{{ form.produced_count.label }}
+          {{ form.produced_count }}
+          {{ form.produced_count.errors }}
+        </label>
+      </div>
+      <div class="flag-row">
+        <label class="check-line">{{ form.is_prototype }} {{ form.is_prototype.label }}</label>
+        <label class="check-line">{{ form.is_featured }} {{ form.is_featured.label }}</label>
+        <label class="check-line">{{ form.is_hidden }} {{ form.is_hidden.label }}</label>
+      </div>
+
+      <label>{{ form.photo.label }}
+        {{ form.photo }}
+        {{ form.photo.errors }}
+      </label>
+      <label>{{ form.board_drawing.label }}
+        {{ form.board_drawing }}
+        <span class="meta">{{ form.board_drawing.help_text }}</span>
+        {{ form.board_drawing.errors }}
+      </label>
+      <label>{{ form.manual.label }}
+        {{ form.manual }}
+        <span class="meta">{{ form.manual.help_text }}</span>
+        {{ form.manual.errors }}
+      </label>
+
+      <fieldset class="picker">
+        <legend>{{ form.factories.label }}</legend>
+        <input type="search" class="picker-filter" placeholder="Найти завод" data-picker="factories">
+        <div class="picker-list" id="picker-factories">{{ form.factories }}</div>
+        {{ form.factories.errors }}
+      </fieldset>
+      <fieldset class="picker">
+        <legend>{{ form.bands.label }}</legend>
+        <div class="picker-list">{{ form.bands }}</div>
+        {{ form.bands.errors }}
+      </fieldset>
+      <label>{{ form.bands_note.label }}
+        {{ form.bands_note }}
+        {{ form.bands_note.errors }}
+      </label>
+
+      <label>{{ form.description.label }}
+        {{ form.description }}
+        {{ form.description.errors }}
+      </label>
+      <label>{{ form.notes.label }}
+        {{ form.notes }}
+        {{ form.notes.errors }}
+      </label>
+
+      <label>{{ form.sensitivity.label }}
+        {{ form.sensitivity }}
+        {{ form.sensitivity.errors }}
+      </label>
+      <label>{{ form.selectivity.label }}
+        {{ form.selectivity }}
+        {{ form.selectivity.errors }}
+      </label>
+      <label>{{ form.output_power.label }}
+        {{ form.output_power }}
+        {{ form.output_power.errors }}
+      </label>
+      <label>{{ form.frequency_response.label }}
+        {{ form.frequency_response }}
+        {{ form.frequency_response.errors }}
+      </label>
+      <label>{{ form.power_supply.label }}
+        {{ form.power_supply }}
+        {{ form.power_supply.errors }}
+      </label>
+      <div class="form-row">
+        <label>{{ form.dimensions.label }}
+          {{ form.dimensions }}
+          {{ form.dimensions.errors }}
+        </label>
+        <label>{{ form.weight.label }}
+          {{ form.weight }}
+          {{ form.weight.errors }}
+        </label>
+        <label>{{ form.transistor_count.label }}
+          {{ form.transistor_count }}
+          {{ form.transistor_count.errors }}
+        </label>
+      </div>
+      <div class="form-row-2">
+        <label>{{ form.receiver_class.label }}
+          {{ form.receiver_class }}
+          {{ form.receiver_class.errors }}
+        </label>
+        <label>{{ form.original_price.label }}
+          {{ form.original_price }}
+          {{ form.original_price.errors }}
+        </label>
+      </div>
+
+      <div class="file-links">
+        <button class="btn" type="submit">Сохранить карточку</button>
+        <a class="btn secondary" href="{{ receiver.get_absolute_url }}">К карточке</a>
+        <a class="btn secondary" href="{% url 'admin:catalog_receiver_change' receiver.pk %}">Запись в админке</a>
+      </div>
+    </form>
+  </article>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+  document.querySelectorAll(".picker-filter").forEach((input) => {
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      const list = document.getElementById("picker-" + input.dataset.picker);
+      if (!list) return;
+      list.querySelectorAll("label").forEach((item) => {
+        if (!item.querySelector("input")) return;
+        item.closest("li, div").hidden = Boolean(query) && !item.textContent.toLowerCase().includes(query);
+      });
+    });
+  });
+</script>
+{% endblock %}

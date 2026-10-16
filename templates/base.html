@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Радиоцех{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@500;600;700&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=lay1">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="{% url 'home' %}">
+        <span class="dial" aria-hidden="true"></span>
+        <span>
+          <span class="brand-mark">Радиоцех</span>
+          <span class="brand-sub">каталог и платы</span>
+        </span>
+      </a>
+      <nav class="nav">
+        <a href="{% url 'catalog:catalog_index' %}">Каталог</a>
+        <a href="{% url 'catalog:factory_list' %}">Заводы</a>
+        <a href="{% url 'catalog:pcb_list' %}">Платы LAY</a>
+        <a href="{% url 'catalog:article_list' %}">Статьи</a>
+        <a href="{% url 'catalog:book_list' %}">Книги</a>
+        <a href="{% url 'shop:product_list' %}">Магазин</a>
+        <a href="{% url 'about' %}">О проекте</a>
+      </nav>
+      <div class="header-tools">
+        <a class="cart-link" href="{% url 'shop:cart' %}">Корзина <span class="badge">{{ cart|length }}</span></a>
+        {% if user.is_authenticated %}
+          <a class="ghost" href="{% url 'shop:my_orders' %}">Заказы</a>
+          <form action="{% url 'logout' %}" method="post">{% csrf_token %}
+            <button class="ghost" type="submit">Выйти</button>
+          </form>
+        {% else %}
+          <a class="ghost" href="{% url 'login' %}">Войти</a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      {% if messages %}
+        <ul class="messages">
+          {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div>
+        <strong>Радиоцех</strong>
+        <p>Магазин проектов модернизации советских приёмников и каталог карточек, статей, книг и файлов печатных плат в формате LAY.</p>
+      </div>
+      <div>
+        <p>Каталог моделей, заводов и печатных плат в формате LAY.</p>
+        <p><a href="{% url 'about' %}">Как пользоваться каталогом</a></p>
+      </div>
+      <div>
+        {% if user.is_staff %}<p>Админка: <a href="{% url 'admin:index' %}">/admin/</a></p>{% endif %}
+        <p>LAY: оригинал и современная элементная база.</p>
+      </div>
+    </div>
+  </footer>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

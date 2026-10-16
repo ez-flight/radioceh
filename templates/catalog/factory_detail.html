@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ factory.short_name }} — Радиоцех{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="kicker">{{ factory.get_kind_display }}</p>
+  <article class="detail">
+    <h1>{{ factory.name }}</h1>
+    <p>
+      {% if factory.city_then or factory.region or factory.republic %}
+        {{ factory.city_then }}{% if factory.city_then and factory.region %}, {% endif %}{{ factory.region }}{% if factory.republic %}{% if factory.city_then or factory.region %}, {% endif %}{{ factory.get_republic_display }}{% endif %}.
+      {% endif %}
+      {% if factory.city_now or factory.country_now %}
+        Сейчас: {{ factory.city_now }}{% if factory.city_now and factory.country_now %}, {% endif %}{{ factory.get_country_now_display }}
+      {% endif %}
+    </p>
+    <p>{{ factory.description }}</p>
+    <h2>Модели</h2>
+    <div class="grid cards-4">
+      {% for receiver in factory.receivers.all %}
+        <a class="card" href="{{ receiver.get_absolute_url }}">
+          <div class="card-body">
+            <div class="meta">{{ receiver.years_display }}</div>
+            <h3>{{ receiver.name }}</h3>
+          </div>
+        </a>
+      {% empty %}
+        <p>В выборке пока нет привязанных моделей.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}
