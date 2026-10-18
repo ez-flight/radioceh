@@ -737,8 +737,17 @@ class LayBuildTests(TestCase):
         a = laytools.analyze(after)
         self.assertNotIn("clearance", a.issue_counts)
         self.assertNotIn("edge", a.issue_counts)
-        polys = [o for o in after.boards[0].objects if o.type == lay.OBJ_POLY]
+        objs = after.boards[0].objects
+        polys = [o for o in objs if o.type == lay.OBJ_POLY]
         self.assertTrue(all(len(o.points) >= 3 for o in polys))
+        self.assertTrue(all(o.type == lay.OBJ_POLY for o in objs[:len(polys)]))   # заливка — первой, под площадками
+        # тепловой барьер: вокруг площадки земли есть кольцо без меди, но площадка с заливкой связана
+        from shapely.geometry import Point
+        from shapely.ops import unary_union
+        fill = unary_union([laytools.object_geometry(o, after.unit) for o in polys])
+        ring = Point(5, -5).buffer(0.9 + 0.3).difference(Point(5, -5).buffer(0.95))
+        self.assertLess(fill.intersection(ring).area, ring.area * 0.6)
+        self.assertGreater(fill.intersection(ring).area, 0)
 
     def test_commands(self):
         import tempfile
