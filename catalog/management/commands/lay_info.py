@@ -13,6 +13,7 @@ class Command(BaseCommand):
         parser.add_argument("--all", action="store_true", help="Проверить все платы LAY в базе")
         parser.add_argument("--clearance", type=float, default=0.3, help="Минимальный зазор, мм")
         parser.add_argument("--min-width", type=float, default=0.25, help="Минимальная ширина дорожки, мм")
+        parser.add_argument("--edge", type=float, default=0.3, help="Отступ меди от края платы и вырезов, мм")
         parser.add_argument("--issues", action="store_true", help="Показать места замечаний")
 
     def handle(self, *args, **opts):
@@ -30,14 +31,16 @@ class Command(BaseCommand):
                 failed += 1
                 self.stdout.write(self.style.ERROR(f"{title}: не читается — {exc}"))
                 continue
-            a = analyze(data, clearance=opts["clearance"], min_width=opts["min_width"])
+            a = analyze(data, clearance=opts["clearance"], min_width=opts["min_width"], edge=opts["edge"])
             s = a.summary
             drills = ", ".join(f"{n}×⌀{d}" for d, n in s["drills"]) or "нет"
             self.stdout.write(self.style.MIGRATE_HEADING(f"{title}"))
             self.stdout.write(
                 f"  Sprint Layout {s['version']}, {s['size_mm'][0]}×{s['size_mm'][1]} мм, медь: {', '.join(s['copper_layers'])}\n"
-                f"  площадки: {s['tht_pads']} выводных, {s['smd_pads']} SMD; отверстия: {drills}\n"
-                f"  деталей {s['components']}, цепей {s['nets']}, перемычек {s['jumpers']} ({s['jumper_length_mm']} мм)")
+                f"  площадки: {s['tht_pads']} выводных, {s['smd_pads']} SMD; отверстия: {drills}"
+                + (f"; без меди: {s['holes']}" if s["holes"] else "") + "\n"
+                f"  деталей {s['components']}, цепей {s['nets']}, перемычек {s['jumpers']} ({s['jumper_length_mm']} мм)"
+                + (f", из них проводов длиннее 15 мм: {s['wires']}" if s["wires"] else ""))
             if a.issue_counts:
                 counts = ", ".join(f"{ISSUE_TITLES[k].lower()}: {n}" for k, n in a.issue_counts.items())
                 self.stdout.write(self.style.WARNING(f"  проверка: {counts}"))

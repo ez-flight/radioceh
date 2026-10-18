@@ -28,3 +28,16 @@ data/enrich_progress.json
 data/*.html
 data/*.pdf
 /*.pdf
+
+# Рабочие материалы, не код: проекты плат, схемы, фото, заметки
+/Проекты/
+/*.lay
+/*.lay6
+*.bak
+/*.png
+/*.jpg
+/*.jpeg
+/*.bmp
+/*.djvu
+/*.txt
+!/requirements.txt

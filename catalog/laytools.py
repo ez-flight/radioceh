@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from catalog import lay
@@ -19,6 +20,8 @@ JUMPER_TOLERANCE = 0.3       # мм: конец линии маркировки 
 DEFAULT_CLEARANCE = 0.3
 DEFAULT_MIN_WIDTH = 0.25
 DEFAULT_MIN_RING = 0.15
+DEFAULT_EDGE = 0.3           # мм: медь не ближе к краю платы и вырезам (слой Ф)
+WIRE_LENGTH = 15.0           # мм: перемычка длиннее — это уже провод
 MAX_ISSUES = 60
 
 
@@ -65,9 +68,41 @@ def object_geometry(o, unit):
     return None
 
 
-def _copper_layers(o):
-    if o.type == lay.OBJ_THT_PAD and o.plated:
-        return (1, 3)
+def plural(n, one, few, many):
+    """Русское окончание: 1 кусок, 2 куска, 5 кусков."""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def is_hole(o):
+    """Выводная площадка с отверстием не меньше её самой — отверстие без меди (крепёж, ось)."""
+    return o.type == lay.OBJ_THT_PAD and o.inner and abs(o.inner) >= abs(o.out) * 0.999
+
+
+def pad_center(o):
+    """Центр площадки в единицах файла. У SMD поля x, y — мусор, центр считается по углам."""
+    if o.type == lay.OBJ_SMD_PAD and o.points:
+        return (sum(p[0] for p in o.points) / len(o.points), sum(p[1] for p in o.points) / len(o.points))
+    return o.x, o.y
+
+
+def board_copper_sides(objects):
+    """Слои меди, на которых есть дорожки, заливки, SMD или дуги (без выводных площадок)."""
+    sides = sorted({o.layer for o in objects if o.type != lay.OBJ_THT_PAD and o.layer in COPPER_LAYERS})
+    return tuple(sides) or (3,)
+
+
+def _copper_layers(o, sides=(3,)):
+    """Выводная площадка в Sprint сквозная: она есть на всех слоях меди платы, а её байт «слой»
+    медь не задаёт (на двусторонних платах там встречается 2). Остальные объекты — на своём слое."""
+    if is_hole(o):
+        return ()
+    if o.type == lay.OBJ_THT_PAD:
+        return sides
     return (o.layer,) if o.layer in COPPER_LAYERS else ()
 
 
@@ -139,8 +174,9 @@ def compute_nets(lay_file, board_index=0):
     board = lay_file.boards[board_index]
     unit = lay_file.unit
     shapes = []          # (индекс, слой, геометрия)
+    sides = board_copper_sides(board.objects)
     for o in board.objects:
-        layers = _copper_layers(o)
+        layers = _copper_layers(o, sides)
         if not layers:
             continue
         g = object_geometry(o, unit)
@@ -173,6 +209,31 @@ def compute_nets(lay_file, board_index=0):
     return nets, jumpers, shapes
 
 
+def board_outline(lay_file, board_index=0):
+    """Плата по контуру слоя Ф: многоугольник внутри линий контура, вырезы и отверстия без меди — дырами.
+
+    None, если контура нет или он не замкнут.
+    """
+    board = lay_file.boards[board_index]
+    unit = lay_file.unit
+    strokes = [object_geometry(o, unit) for o in board.objects if o.layer == 7 and o.type != lay.OBJ_TEXT]
+    strokes = [g for g in strokes if g is not None and not g.is_empty]
+    if not strokes:
+        return None
+    lines = unary_union(strokes)
+    x0, y0, x1, y1 = lines.bounds
+    frame = box(x0 - 1, y0 - 1, x1 + 1, y1 + 1)
+    rest = frame.difference(lines)
+    inside = [p for p in getattr(rest, "geoms", [rest])
+              if p.geom_type == "Polygon" and not p.exterior.intersects(frame.exterior)]
+    if not inside:
+        return None
+    plate = max(inside, key=lambda p: p.area)
+    holes = [object_geometry(o, unit) for o in board.objects if is_hole(o)]
+    holes = [g for g in holes if g is not None and plate.intersects(g)]
+    return plate.difference(unary_union(holes)) if holes else plate
+
+
 def _summary(lay_file, board, nets, jumpers):
     unit = lay_file.unit
     k = 1.0 / unit
@@ -186,7 +247,8 @@ def _summary(lay_file, board, nets, jumpers):
         size = (board.size_x * k, board.size_y * k)
     drills = Counter(round(abs(o.inner) * k * 2, 1) for o in objs if o.type == lay.OBJ_THT_PAD and o.inner)
     tracks = [o for o in objs if o.type == lay.OBJ_LINE and o.layer in COPPER_LAYERS]
-    copper_sides = sorted({layer for o in objs for layer in _copper_layers(o)})
+    sides = board_copper_sides(objs)
+    copper_sides = sorted({layer for o in objs for layer in _copper_layers(o, sides)})
     parts = {o.groups[-1] for o in objs if o.groups and o.type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)}
     labels = Counter(o.text.strip() for o in objs
                      if o.type == lay.OBJ_TEXT and o.layer not in COPPER_LAYERS and o.text.strip())
@@ -202,13 +264,15 @@ def _summary(lay_file, board, nets, jumpers):
         "polygons": sum(1 for o in objs if o.type == lay.OBJ_POLY and o.layer in COPPER_LAYERS),
         "jumpers": len(jumpers),
         "jumper_length_mm": round(sum(j[3] for j in jumpers), 1),
+        "wires": sum(1 for j in jumpers if j[3] > WIRE_LENGTH),
+        "holes": sum(1 for o in objs if is_hole(o)),
         "components": len(parts),
         "nets": len(set(nets.values())),
         "labels": sorted(labels.items(), key=lambda kv: (-kv[1], kv[0]))[:40],
     }
 
 
-def _drc(lay_file, board, nets, shapes, clearance, min_width, min_ring):
+def _drc(lay_file, board, nets, shapes, clearance, min_width, min_ring, edge=DEFAULT_EDGE, outline=None):
     unit = lay_file.unit
     k = 1.0 / unit
     issues = []
@@ -247,24 +311,48 @@ def _drc(lay_file, board, nets, shapes, clearance, min_width, min_ring):
             if 0 < w < min_width - 1e-3:
                 x, y = o.points[0]
                 add("width", f"Дорожка {w:.2f} мм — тоньше {min_width} мм", x * k, y * k)
-        if o.type == lay.OBJ_THT_PAD and o.inner:
+        if o.type == lay.OBJ_THT_PAD and o.inner and not is_hole(o):
             ring = (abs(o.out) - abs(o.inner)) * k
             if ring < min_ring - 1e-3:
                 add("ring", f"Поясок площадки {ring:.2f} мм — меньше {min_ring} мм", o.x * k, o.y * k)
     members = Counter(nets.values())
     for o in board.objects:
         if o.type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD) and o.index in nets and members[nets[o.index]] == 1:
-            add("single", "Площадка ни с чем не соединена", o.x * k, o.y * k)
+            x, y = pad_center(o)
+            add("single", "Площадка ни с чем не соединена", x * k, y * k)
+    # медь, в цепи которой нет ни одной площадки: обрывки старых дорожек, островки заливки
+    with_pads = {nets[o.index] for o in board.objects
+                 if o.type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD) and o.index in nets}
+    reported = set()
+    for idx, _, g in shapes:
+        n = nets.get(idx)
+        if n is not None and n not in with_pads and n not in reported:
+            reported.add(n)
+            p = g.representative_point()
+            add("orphan", "Медь ни с чем не соединена (нет площадок)", p.x, p.y)
+    # медь у края платы и у вырезов/отверстий
+    if outline is not None and edge > 0:
+        inner = outline.buffer(-edge)
+        seen_edge = set()
+        for idx, _, g in shapes:
+            if idx in seen_edge or inner.contains(g):
+                continue
+            out = g.difference(inner)
+            if out.area > 0.01:
+                seen_edge.add(idx)
+                p = out.representative_point()
+                add("edge", f"Медь ближе {edge} мм к краю платы или вырезу", p.x, p.y)
     return issues, dict(counts)
 
 
 def analyze(lay_file, board_index=0, clearance=DEFAULT_CLEARANCE, min_width=DEFAULT_MIN_WIDTH,
-            min_ring=DEFAULT_MIN_RING):
+            min_ring=DEFAULT_MIN_RING, edge=DEFAULT_EDGE):
     board = lay_file.boards[board_index]
     nets, jumpers, shapes = compute_nets(lay_file, board_index)
     for line_idx, a, _, _ in jumpers:
         nets[line_idx] = nets[a]
-    issues, counts = _drc(lay_file, board, nets, shapes, clearance, min_width, min_ring)
+    issues, counts = _drc(lay_file, board, nets, shapes, clearance, min_width, min_ring,
+                          edge=edge, outline=board_outline(lay_file, board_index))
     return Analysis(nets=nets, net_count=len(set(nets.values())), jumpers=jumpers,
                     summary=_summary(lay_file, board, nets, jumpers), issues=issues, issue_counts=counts)
 
@@ -286,6 +374,8 @@ ISSUE_TITLES = {
     "width": "Тонкая дорожка",
     "ring": "Узкий поясок",
     "single": "Неподключённая площадка",
+    "orphan": "Медь без площадок",
+    "edge": "Медь у края платы",
 }
 
 
@@ -304,10 +394,7 @@ def _pad_keys(lay_file, board_index=0):
     out = {}
     for o in lay_file.boards[board_index].objects:
         if o.type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD):
-            x, y = (o.x * k, o.y * k)
-            if o.type == lay.OBJ_SMD_PAD and o.points:
-                xs = [p[0] * k for p in o.points]; ys = [p[1] * k for p in o.points]
-                x, y = sum(xs) / len(xs), sum(ys) / len(ys)
+            x, y = (v * k for v in pad_center(o))
             out[(o.type, o.layer, round(x / 0.05), round(y / 0.05))] = (o.index, x, y)
     return out
 
@@ -330,6 +417,76 @@ def diff(a, b):
     merges = [(*where[("b", n)], f"Слились {len(v)} разные цепи") for n, v in b_to_a.items() if len(v) > 1]
     return Diff(matched=len(common), only_a=len(pa) - len(common), only_b=len(pb) - len(common),
                 splits=splits, merges=merges)
+
+
+# ------------------------------------------------------------ сверка со списком соединений
+@dataclass
+class NetCheck:
+    nets: int                  # цепей в списке
+    ok: int                    # собраны в один кусок и ни с чем не слиты
+    broken: list               # [(цепь, [[метки куска], …])]
+    shorts: list               # [(цепь, цепь, метка)] — разные цепи списка на одной меди
+    missing: list              # [(цепь, метка, x, y, причина)] — точка не на меди или на нескольких цепях
+
+    @property
+    def passed(self):
+        return not (self.broken or self.shorts or self.missing)
+
+
+def _locator(lay_file, board_index=0):
+    nets, _, shapes = compute_nets(lay_file, board_index)
+    objs = lay_file.boards[board_index].objects
+    geoms = [g for _, _, g in shapes]
+    tree = STRtree(geoms) if geoms else None
+
+    def at(x, y):
+        """Множество цепей меди в точке; выводные и SMD-площадки важнее дорожек и заливки."""
+        if tree is None:
+            return set()
+        p = Point(x, y)
+        hits = [i for i in tree.query(p.buffer(0.05)) if geoms[i].distance(p) < 0.05]
+        pads = [i for i in hits if objs[shapes[i][0]].type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)]
+        return {nets[shapes[i][0]] for i in (pads or hits)}
+    return at
+
+
+def check_netlist(lay_file, netlist, board_index=0):
+    """netlist: {цепь: [(x, y, метка), …]} в мм файла (ось Y вверх). Каждая цепь должна быть одним
+    куском меди (с учётом перемычек), и разные цепи не должны сходиться на одной меди."""
+    at = _locator(lay_file, board_index)
+    broken, shorts, missing, owner = [], [], [], {}
+    for name, points in netlist.items():
+        pieces = defaultdict(list)
+        for x, y, label in points:
+            found = at(x, y)
+            if len(found) != 1:
+                missing.append((name, label, x, y, "нет меди" if not found else "на нескольких цепях"))
+                continue
+            pieces[found.pop()].append(label)
+        if len(pieces) > 1:
+            broken.append((name, list(pieces.values())))
+        for cid, labels in pieces.items():
+            if cid in owner and owner[cid] != name:
+                shorts.append((owner[cid], name, labels[0]))
+            owner.setdefault(cid, name)
+    bad = {b[0] for b in broken} | {m[0] for m in missing} | {s[0] for s in shorts} | {s[1] for s in shorts}
+    ok = sum(1 for name in netlist if name not in bad)
+    return NetCheck(nets=len(netlist), ok=ok, broken=broken, shorts=shorts, missing=missing)
+
+
+def export_netlist(lay_file, board_index=0):
+    """Список соединений платы по площадкам: [(цепь, x, y, метка)] в мм файла. Цепи из одной площадки
+    пропускаются. Служит эталоном: после правок платы её можно сверить с ним (check_netlist)."""
+    nets, _, _ = compute_nets(lay_file, board_index)
+    k = 1.0 / lay_file.unit
+    rows = []
+    for o in lay_file.boards[board_index].objects:
+        if o.type not in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD) or o.index not in nets:
+            continue
+        x, y = (v * k for v in pad_center(o))
+        rows.append((nets[o.index], round(x, 3), round(y, 3), f"#{o.index}"))
+    sizes = Counter(r[0] for r in rows)
+    return [(f"N{n}", x, y, label) for n, x, y, label in rows if sizes[n] > 1]
 
 
 # ------------------------------------------------------------ готовые SVG для сайта (с кэшем)

@@ -646,6 +646,131 @@ class LayToolsTests(TestCase):
         self.assertEqual(lay.parse(doc.to_bytes()).boards[0].objects[2].points[-1], (2000.0, -1000.0))
 
 
+class LayBuildTests(TestCase):
+    """Создание объектов (layedit), контур, отверстия без меди, медь без площадок, список соединений, заливка."""
+
+    def empty_board(self):
+        from catalog.layedit import LayDoc
+
+        return LayDoc(build_lay5(b"", 0, 0))
+
+    def plate(self):
+        """Плата 40×30 мм с контуром на слое Ф и отверстием ⌀4 мм без меди посередине."""
+        doc = self.empty_board()
+        doc.add_line([(0, 0), (40, 0), (40, -30), (0, -30), (0, 0)], 0.3, layer=7)
+        doc.add_circle(20, -15, 2.0, 0.3, layer=7)
+        return doc
+
+    def test_created_objects_parse_back(self):
+        from catalog import lay
+
+        doc = self.empty_board()
+        doc.add_line([(1, -1), (5, -1)], 0.4)
+        doc.add_pad(1, -1, 1.8, 0.8)
+        doc.add_smd(10, -5, 1.9, 0.6)
+        doc.add_polygon([(20, -20), (25, -20), (25, -25)])
+        doc.add_circle(30, -10, 3, 0.4, layer=7)
+        n_text = len(doc.add_text("Вега-341", 2, -28, 1.0))
+        objs = lay.parse(doc.to_bytes()).boards[0].objects
+        self.assertEqual([o.type for o in objs[:5]], [6, 2, 8, 4, 5])
+        self.assertEqual(objs[0].points[-1], (500.0, -100.0))
+        self.assertEqual(objs[0].line_width, 40)
+        self.assertAlmostEqual(objs[1].out, 90.0)
+        self.assertAlmostEqual(objs[1].inner, 40.0)
+        self.assertAlmostEqual(objs[4].out, 320.0)
+        self.assertEqual(objs[4].layer, 7)
+        self.assertEqual(len(objs), 5 + n_text)
+        self.assertTrue(all(o.layer == 2 for o in objs[5:]))
+
+    def test_outline_hole_and_edge(self):
+        from catalog import lay, laytools
+
+        doc = self.plate()
+        doc.add_pad(35, -15, 3.2, 3.2)                       # крепёжное отверстие без меди
+        doc.add_line([(5, -0.3), (15, -0.3)], 0.4)           # дорожка у самого края
+        parsed = lay.parse(doc.to_bytes())
+        outline = laytools.board_outline(parsed)
+        self.assertIsNotNone(outline)
+        self.assertEqual(len(outline.interiors), 2)          # отверстие с контура и крепёжное
+        a = laytools.analyze(parsed)
+        self.assertEqual(a.summary["holes"], 1)
+        self.assertNotIn("ring", a.issue_counts)             # у отверстия без меди нет пояска
+        self.assertEqual(a.issue_counts.get("edge"), 1)
+        self.assertEqual(a.issue_counts.get("orphan"), 1)    # дорожка без площадок
+
+    def test_netlist_check_and_export(self):
+        from catalog import lay, laytools
+
+        doc = self.plate()
+        for x in (5, 15, 25):
+            doc.add_pad(x, -5, 1.8, 0.8)
+        doc.add_line([(5, -5), (15, -5)], 0.4)
+        parsed = lay.parse(doc.to_bytes())
+        good = laytools.check_netlist(parsed, {"A": [(5, -5, "R1.1"), (15, -5, "R1.2")], "B": [(25, -5, "C1.1")]})
+        self.assertTrue(good.passed)
+        self.assertEqual(good.ok, 2)
+        bad = laytools.check_netlist(parsed, {"A": [(5, -5, "R1.1"), (25, -5, "C1.1")], "B": [(15, -5, "R1.2")],
+                                               "C": [(30, -25, "X")]})
+        self.assertEqual([b[0] for b in bad.broken], ["A"])
+        self.assertEqual(bad.shorts, [("A", "B", "R1.2")])
+        self.assertEqual(bad.missing[0][:2], ("C", "X"))
+        rows = laytools.export_netlist(parsed)
+        self.assertEqual(len(rows), 2)                        # одиночная площадка не выгружается
+        self.assertEqual(len({r[0] for r in rows}), 1)
+
+    def test_pour_keeps_nets_and_skips_islands(self):
+        from catalog import lay, laytools
+        from catalog.laypour import pour
+
+        doc = self.plate()
+        doc.add_pad(5, -5, 1.8, 0.8)                          # земля
+        doc.add_pad(35, -25, 1.8, 0.8)                        # чужая цепь
+        doc.add_line([(25, -10), (25, -20), (36, -20), (36, -10), (25, -10)], 0.6)   # кольцо чужой меди
+        doc.add_pad(25, -10, 1.8, 0.8)
+        before = lay.parse(doc.to_bytes())
+        data, report = pour(doc.to_bytes(), (5, -5))
+        after = lay.parse(data)
+        self.assertGreater(report.polygons, 0)
+        self.assertEqual(report.skipped, 1)                   # внутри кольца — островок, не залит
+        d = laytools.diff(before, after)
+        self.assertEqual((d.splits, d.merges), ([], []))
+        a = laytools.analyze(after)
+        self.assertNotIn("clearance", a.issue_counts)
+        self.assertNotIn("edge", a.issue_counts)
+        polys = [o for o in after.boards[0].objects if o.type == lay.OBJ_POLY]
+        self.assertTrue(all(len(o.points) >= 3 for o in polys))
+
+    def test_commands(self):
+        import tempfile
+        from io import StringIO
+        from pathlib import Path
+
+        from django.core.management import call_command
+
+        doc = self.plate()
+        doc.add_pad(5, -5, 1.8, 0.8)
+        doc.add_pad(15, -5, 1.8, 0.8)
+        doc.add_line([(5, -5), (15, -5)], 0.4)
+        with tempfile.TemporaryDirectory() as tmp:
+            board = Path(tmp, "b.lay")
+            board.write_bytes(doc.to_bytes())
+            net = Path(tmp, "n.csv")
+            call_command("lay_check", str(board), export=str(net), stdout=StringIO())
+            self.assertIn("5.0;5.0", net.read_text(encoding="utf-8"))   # y — вниз, как в lay_info
+            out = StringIO()
+            call_command("lay_check", str(board), str(net), stdout=out)
+            self.assertIn("соответствует", out.getvalue())
+            out = StringIO()
+            call_command("lay_pour", str(board), str(Path(tmp, "p.lay")), at=[5.0, 5.0], stdout=out)
+            self.assertIn("Залито", out.getvalue())
+
+    def test_plural(self):
+        from catalog.laytools import plural
+
+        self.assertEqual([plural(n, "кусок", "куска", "кусков") for n in (1, 2, 5, 11, 21, 22, 112)],
+                         ["кусок", "куска", "кусков", "кусков", "кусок", "куска", "кусков"])
+
+
 class LayPagesTests(TestCase):
     def setUp(self):
         spec = LayToolsTests.base_spec(None)

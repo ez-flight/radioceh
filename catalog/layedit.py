@@ -79,6 +79,29 @@ def _read_obj(data, pos, toplevel=True):
     return Obj(hdr, text, marker, groups, points=pts, toplevel=toplevel), pos
 
 
+ROUND, OCTAGON, SQUARE = 1, 2, 3          # формы выводных площадок
+
+# Заголовки объектов, сохранённые самим Sprint Layout (v5 — _341_v2.lay, v6 — TA2003P…lay6). Новый объект
+# берёт заголовок у объекта того же типа из правимого файла, а если такого нет — отсюда; координаты,
+# размеры и слой перезаписываются, неизвестные поля остаются как у Sprint.
+TEMPLATES = {
+    5: {
+        2: "0210c390444b669bc50000c84200001c4276a201a800030178936c0700000055000000cc936c07003128000000b8936c070000000064000000000100000015cd5b070000000000000000000000",
+        4: "048a258c45004012c5b0e0404a8a0be04e0000000000030520f640070000000080f1c4e0f64007051028000000ccf64007000001000a000000000032350015cd5b0700001b0000000000000002",
+        5: "0500406e44001038c50000424300001a435a000000000201000000000000000e01000058a76c0700002800000044a76c07000000000000000000000002000000303000007014560070145600f4",
+        6: "0600c0a84400c8b4c530302e30300000584100000000030328b96c07000000001300008cb96c0700022800000048b96c07003d0300ea3d032c020000004b030288ea3d0388ea3d031c02000088",
+        8: "080090114600d890c500007a430000af43374103ec000303f8ba6c070000000017000064bb6c0700062800000050bb6c0700000000384103103801039805000010000000130000000000000002",
+    },
+    6: {
+        2: "02000a254800a34ac800401c4600401c4500000000000301903fb003000000555555552040b0030000a00f0000f03fb0030000000064000000000100000015cd5b070000000000000000000000",
+        4: "0400000000000000000000000000000000a00f000000030098fd900300000000000000c8fd90030000881300000000000000000100a00f00000000000000000000000000000000000000000000",
+        5: "0500e6aa48008ff7c80010244600701446b01e040000030000000000000000b01e04004007f1050000a00f00000000000000000000000000000000000000000000000000000000000000000000",
+        6: "0600000000000000000000000000000000a00f00000003005042910300000000000000204291030000a00f00000000000000000000000000000000000000000000000000000000000000000000",
+        8: "08000000000000000000803b4600c05a4656a102c4000302904a910300000055000000484a91030000a00f0000304a91030000320064000000200100000015cd5b070000000000000000000000",
+    },
+}
+
+
 class LayDoc:
     COUNT_OFF = 0x21A  # версия 5, одна плата: число объектов сразу после заголовка платы
 
@@ -99,6 +122,81 @@ class LayDoc:
                     raise ValueError("Файлы с непустыми соединениями (ratsnest) не поддержаны")
                 pos += 4
         self.trailer = data[pos:]
+
+    # ---------------------------------------------------------------- создание объектов (мм, ось Y вверх)
+    @property
+    def version(self):
+        return self.prefix[0]
+
+    @property
+    def unit(self):
+        """Единиц файла в миллиметре."""
+        return 100.0 if self.version < 6 else 10000.0
+
+    @property
+    def angle_unit(self):
+        return 1.0 if self.version < 6 else 1000.0
+
+    def _new(self, kind, layer):
+        src = next((o for o in self.objects if o.type == kind and o.toplevel), None)
+        hdr = src.hdr if src is not None else bytes.fromhex(TEMPLATES[6 if self.version >= 6 else 5][kind])
+        o = Obj(hdr, points=[] if kind not in (5, 7) else None, children=[] if kind == 7 else None)
+        o.hdr[0] = kind
+        o.hdr[22] = layer
+        self.objects.append(o)
+        return o
+
+    def _xy(self, o, x, y):
+        o.set("<f", 1, x * self.unit)
+        o.set("<f", 5, y * self.unit)
+
+    def add_line(self, points, width, layer=3):
+        """Дорожка (медь) или линия маркировки/контура: points — [(x, y), …] в мм."""
+        o = self._new(6, layer)
+        o.points = [(x * self.unit, y * self.unit) for x, y in points]
+        self._xy(o, *points[0])
+        o.set("<I", 17, int(round(width * self.unit)))
+        return o
+
+    def add_pad(self, x, y, diameter, drill, shape=ROUND, layer=3):
+        """Выводная площадка; drill >= diameter — отверстие без меди."""
+        o = self._new(2, layer)
+        self._xy(o, x, y)
+        o.set("<f", 9, diameter / 2 * self.unit)
+        o.set("<f", 13, drill / 2 * self.unit)
+        o.hdr[23] = shape
+        return o
+
+    def add_smd(self, x, y, w, h, layer=3):
+        o = self._new(8, layer)
+        u = self.unit
+        o.points = [((x - w / 2) * u, (y + h / 2) * u), ((x - w / 2) * u, (y - h / 2) * u),
+                    ((x + w / 2) * u, (y - h / 2) * u), ((x + w / 2) * u, (y + h / 2) * u)]
+        self._xy(o, x, y)
+        return o
+
+    def add_polygon(self, points, layer=3, width=0.0):
+        """Залитый многоугольник без дыр (замыкать не нужно)."""
+        o = self._new(4, layer)
+        o.points = [(x * self.unit, y * self.unit) for x, y in points]
+        self._xy(o, *points[0])
+        o.set("<I", 17, int(round(width * self.unit)))
+        return o
+
+    def add_circle(self, x, y, radius, width, layer=7, start=0.0, end=0.0):
+        """Окружность (start == end) или дуга, углы в градусах; на слое 7 — фрезеровка (отверстие, вырез)."""
+        o = self._new(5, layer)
+        self._xy(o, x, y)
+        o.set("<f", 9, (radius + width / 2) * self.unit)
+        o.set("<f", 13, (radius - width / 2) * self.unit)
+        o.set("<I", 31, int(round(start * self.angle_unit)))
+        o.set("<I", 17, int(round(end * self.angle_unit)))
+        return o
+
+    def add_text(self, text, x, y, height=1.0, layer=2, width=0.15, anchor="left"):
+        """Надпись штриховым шрифтом (линиями), кириллица поддерживается."""
+        from catalog.layfont import strokes
+        return [self.add_line(poly, width, layer) for poly in strokes(text, x, y, height, anchor)]
 
     def to_bytes(self):
         out = bytearray(self.prefix)
