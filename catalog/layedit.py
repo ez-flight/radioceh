@@ -137,13 +137,16 @@ class LayDoc:
     def angle_unit(self):
         return 1.0 if self.version < 6 else 1000.0
 
-    def _new(self, kind, layer):
+    def _new(self, kind, layer, first=False):
         src = next((o for o in self.objects if o.type == kind and o.toplevel), None)
         hdr = src.hdr if src is not None else bytes.fromhex(TEMPLATES[6 if self.version >= 6 else 5][kind])
         o = Obj(hdr, points=[] if kind not in (5, 7) else None, children=[] if kind == 7 else None)
         o.hdr[0] = kind
         o.hdr[22] = layer
-        self.objects.append(o)
+        if first:
+            self.objects.insert(0, o)      # рисуется первым — под остальными объектами
+        else:
+            self.objects.append(o)
         return o
 
     def _xy(self, o, x, y):
@@ -175,9 +178,10 @@ class LayDoc:
         self._xy(o, x, y)
         return o
 
-    def add_polygon(self, points, layer=3, width=0.0):
-        """Залитый многоугольник без дыр (замыкать не нужно)."""
-        o = self._new(4, layer)
+    def add_polygon(self, points, layer=3, width=0.0, first=False):
+        """Залитый многоугольник без дыр (замыкать не нужно). first=True — в начало списка объектов
+        (заливка под площадками, иначе Sprint рисует её поверх и прячет площадки и отверстия)."""
+        o = self._new(4, layer, first)
         o.points = [(x * self.unit, y * self.unit) for x, y in points]
         self._xy(o, *points[0])
         o.set("<I", 17, int(round(width * self.unit)))
