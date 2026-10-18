@@ -19,6 +19,7 @@ urlpatterns = [
     path("platy/<int:pk>/skachat/", views.pcb_download, name="pcb_download"),
     path("platy/<int:pk>/prosmotr/", views.PCBPreviewView.as_view(), name="pcb_preview"),
     path("platy/<int:pk>/plata.svg", views.pcb_svg, name="pcb_svg"),
+    path("platy/<int:pk>/pechat/", views.pcb_print, name="pcb_print"),
     path("platy/fayl/<path:path>", views.pcb_file, name="pcb_file"),
     path("<slug:category_slug>/", views.ReceiverListView.as_view(), name="receiver_list"),
     path("<slug:category_slug>/<slug:slug>/", views.ReceiverDetailView.as_view(), name="receiver_detail"),

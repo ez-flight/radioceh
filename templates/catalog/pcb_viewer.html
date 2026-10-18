@@ -5,12 +5,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} — Радиоцех</title>
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=lay1">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=lay2">
 </head>
 <body class="doc-window">
   <div class="doc-window-page">
     <header class="doc-window-bar">
       <p>{{ title }}</p>
+      {% if svg %}<a href="{% url 'catalog:pcb_print' pcb.pk %}" target="_blank" rel="noopener">Печать 1:1</a>{% endif %}
       <a href="{% url 'catalog:pcb_download' pcb.pk %}">Скачать</a>
       <button type="button" onclick="window.close()">Закрыть</button>
     </header>
@@ -28,8 +29,22 @@
             <button type="button" data-lay-zoom="in" aria-label="Увеличить">+</button>
           </div>
         </div>
-        <div class="lay-stage" data-lay-stage>{{ svg|safe }}</div>
-        <p class="lay-hint">Колесо мыши — масштаб, перетаскивание — сдвиг. Размеры в миллиметрах.</p>
+        <div class="lay-body">
+          <div class="lay-stage" data-lay-stage>{{ svg|safe }}</div>
+          {% if analysis %}
+            <aside class="lay-panel" data-lay-panel>
+              <p class="lay-net" data-lay-net>Нажмите на дорожку или площадку — подсветится вся цепь вместе с перемычками.</p>
+              <h2>О плате</h2>
+              {% include "catalog/_lay_summary.html" %}
+              {% if can_review %}
+                <h2>Проверка</h2>
+                {% include "catalog/_lay_issues.html" %}
+                {% if analysis.issues %}<p class="meta">Места замечаний обведены красным (слой «Замечания проверки»), подсказка — при наведении.</p>{% endif %}
+              {% endif %}
+            </aside>
+          {% endif %}
+        </div>
+        <p class="lay-hint">Колесо мыши — масштаб, перетаскивание — сдвиг, щелчок — цепь, Esc — снять выделение.</p>
       </div>
     {% else %}
       <div class="lay-empty">
@@ -38,6 +53,6 @@
       </div>
     {% endif %}
   </div>
-  {% if svg %}<script src="{% static 'js/pcb_viewer.js' %}?v=lay1"></script>{% endif %}
+  {% if svg %}<script src="{% static 'js/pcb_viewer.js' %}?v=lay2"></script>{% endif %}
 </body>
 </html>

@@ -88,10 +88,42 @@
 
   const pointers = new Map();
   let pinchDistance = 0;
+  let downAt = null;
+  let moved = 0;
+
+  // Подсветка цепи: все элементы с тем же data-net
+  const netInfo = document.querySelector("[data-lay-net]");
+  const netHint = netInfo ? netInfo.textContent : "";
+  let activeNet = null;
+
+  function setNet(net) {
+    svg.querySelectorAll(".net-hl").forEach(function (el) { el.classList.remove("net-hl"); });
+    activeNet = net;
+    svg.classList.toggle("net-active", net !== null);
+    if (net === null) {
+      if (netInfo) netInfo.textContent = netHint;
+      return;
+    }
+    const items = svg.querySelectorAll('[data-net="' + net + '"]');
+    items.forEach(function (el) { el.classList.add("net-hl"); });
+    if (netInfo) netInfo.textContent = "Цепь №" + net + ": элементов " + items.length + ". Щелчок по пустому месту или Esc — снять выделение.";
+  }
+
+  function pickNet(event) {
+    const target = document.elementsFromPoint(event.clientX, event.clientY)
+      .find(function (el) { return el.hasAttribute && el.hasAttribute("data-net"); });
+    const net = target ? target.getAttribute("data-net") : null;
+    setNet(net === activeNet ? null : net);
+  }
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") setNet(null);
+  });
 
   svg.addEventListener("pointerdown", function (event) {
-    svg.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 1) { downAt = { x: event.clientX, y: event.clientY }; moved = 0; }
+    svg.setPointerCapture(event.pointerId);
     stage.classList.add("dragging");
   });
 
@@ -109,6 +141,7 @@
       return;
     }
 
+    if (downAt) moved = Math.max(moved, Math.hypot(current.x - downAt.x, current.y - downAt.y));
     const from = toSvgPoint(prev.x, prev.y);
     const to = toSvgPoint(current.x, current.y);
     view.x -= to.x - from.x;
@@ -118,6 +151,10 @@
   });
 
   function release(event) {
+    if (event.type === "pointerup" && pointers.size === 1 && downAt && moved < 4) {
+      svg.releasePointerCapture(event.pointerId);
+      pickNet(event);
+    }
     pointers.delete(event.pointerId);
     pinchDistance = 0;
     if (!pointers.size) stage.classList.remove("dragging");

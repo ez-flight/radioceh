@@ -7,6 +7,7 @@ from django.urls import reverse, reverse_lazy
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
 
 from catalog.forms import PCBUploadForm, ReceiverEditForm
+from catalog.laytools import ISSUE_TITLES
 from catalog.models import Article, Book, Factory, PCBFile, PCBPhoto, Receiver, ReceiverCategory
 from catalog.permissions import can_edit_catalog, can_upload_boards
 from shop.models import Product
@@ -302,9 +303,43 @@ class PCBPreviewView(DocumentViewerView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        if self.object.is_lay:
-            ctx["svg"] = self.object.lay_svg()
+        pcb = self.object
+        if pcb.is_lay:
+            review = pcb.can_review_file(self.request.user)
+            ctx["svg"] = pcb.lay_svg_nets(with_markers=review)
+            ctx["analysis"] = pcb.lay_analysis()
+            ctx["can_review"] = review
+            ctx["issue_titles"] = ISSUE_TITLES
         return ctx
+
+
+PRINT_LAYERS = {1: "Медь, верх (К1)", 3: "Медь, низ (К2)", 5: "Внутренний 1", 6: "Внутренний 2"}
+
+
+def pcb_print(request, pk):
+    """Слой меди 1:1 для ЛУТ/фоторезиста."""
+    pcb = get_accessible_pcb(request, pk)
+    analysis = pcb.lay_analysis()
+    if analysis is None:
+        raise Http404("Не удалось прочитать файл платы.")
+    from catalog.laytools import COPPER_LAYERS, print_svg
+
+    layers = [code for code, name in COPPER_LAYERS.items() if name in analysis.summary["copper_layers"]] or [3]
+    try:
+        layer = int(request.GET.get("layer", layers[-1] if 3 not in layers else 3))
+    except ValueError:
+        layer = 3
+    if layer not in layers:
+        layer = layers[0]
+    mirror = request.GET.get("mirror") == "1"
+    return render(request, "catalog/pcb_print.html", {
+        "pcb": pcb,
+        "svg": print_svg(pcb.file.path, layer, mirror),
+        "layers": [(code, PRINT_LAYERS[code]) for code in layers],
+        "layer": layer,
+        "mirror": mirror,
+        "size": analysis.summary["size_mm"],
+    })
 
 
 def get_accessible_pcb(request, pk=None, file_name=None):
@@ -364,6 +399,9 @@ class PCBListView(ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        user = self.request.user
+        for pcb in ctx["pcbs"]:
+            pcb.show_lay_thumb = pcb.is_lay and not pcb.photos.all() and pcb.can_access_file(user)
         ctx["filters"] = self.request.GET
         params = self.request.GET.copy()
         params.pop("page", None)
@@ -396,6 +434,9 @@ class PCBDetailView(DetailView):
         pcb = self.object
         ctx["can_access_file"] = pcb.can_access_file(self.request.user)
         ctx["lay_preview"] = ctx["can_access_file"] and pcb.lay_svg() is not None
+        ctx["analysis"] = pcb.lay_analysis() if pcb.is_lay else None
+        ctx["can_review"] = pcb.can_review_file(self.request.user)
+        ctx["issue_titles"] = ISSUE_TITLES
         return ctx
 
 
@@ -414,6 +455,13 @@ class PCBCreateView(LoginRequiredMixin, UserPassesTestMixin, CreateView):
         for index, photo in enumerate(form.cleaned_data.get("photos") or []):
             PCBPhoto.objects.create(pcb=self.object, image=photo, sort_order=index)
         messages.success(self.request, "Проект платы добавлен.")
+        analysis = self.object.lay_analysis()
+        if analysis is not None:
+            if analysis.issue_counts:
+                parts = ", ".join(f"{ISSUE_TITLES[k].lower()}: {n}" for k, n in analysis.issue_counts.items())
+                messages.warning(self.request, f"Автоматическая проверка платы — {parts}. Подробности в просмотре платы.")
+            else:
+                messages.info(self.request, "Автоматическая проверка платы замечаний не нашла.")
         return response
 
 

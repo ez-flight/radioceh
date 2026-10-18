@@ -1,0 +1,35 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Печать платы — {{ pcb.title }} — Радиоцех</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=lay2">
+</head>
+<body class="print-page">
+  <form class="print-bar" method="get">
+    <h1>{{ pcb.title }} — {{ size.0 }} × {{ size.1 }} мм</h1>
+    <label>Слой
+      <select name="layer" onchange="this.form.submit()">
+        {% for code, name in layers %}<option value="{{ code }}"{% if code == layer %} selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><input type="checkbox" name="mirror" value="1"{% if mirror %} checked{% endif %} onchange="this.form.submit()"> Зеркально</label>
+    <button type="button" onclick="window.print()">Печать</button>
+    <a href="{% url 'catalog:pcb_detail' pcb.pk %}">К плате</a>
+    <p class="print-note">Печатайте в масштабе 100 % («Фактический размер»), без «Вписать в страницу». Проверьте линейку под платой: в ней ровно 50 мм.
+      Для ЛУТ медь нижнего слоя обычно печатают без зеркала, верхнего — зеркально; сверьтесь с надписями на плате: на готовом отпечатке они должны читаться зеркально.</p>
+  </form>
+  <div class="print-sheet">
+    {{ svg|safe }}
+    <svg xmlns="http://www.w3.org/2000/svg" width="54mm" height="6mm" viewBox="0 0 54 6" aria-label="Контрольная линейка 50 мм">
+      <rect width="54" height="6" fill="#fff"/>
+      <line x1="2" y1="3" x2="52" y2="3" stroke="#000" stroke-width="0.3"/>
+      <line x1="2" y1="1" x2="2" y2="5" stroke="#000" stroke-width="0.3"/>
+      <line x1="52" y1="1" x2="52" y2="5" stroke="#000" stroke-width="0.3"/>
+      <text x="27" y="2.4" font-size="2" text-anchor="middle">50 мм</text>
+    </svg>
+  </div>
+</body>
+</html>

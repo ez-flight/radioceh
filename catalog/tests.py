@@ -52,7 +52,7 @@ class PCBUploadTests(TestCase):
             "notes": "Общий размер платы",
             "receivers": [self.vega_241.pk, self.vega_341.pk],
             "chips": [self.chip.pk],
-            "file": SimpleUploadedFile("vega.lay", b"LAY", content_type="application/octet-stream"),
+            "file": SimpleUploadedFile("vega.lay", build_lay5(lay_object(6, width=50, points=[(0, 0), (1000, 0)]), 1, 0), content_type="application/octet-stream"),
         }
         response = self.client.post(reverse("catalog:pcb_create"), payload)
         self.assertEqual(response.status_code, 302)
@@ -76,7 +76,7 @@ class PCBUploadTests(TestCase):
             "receivers": [self.vega_341.pk],
             "source_url": "https://example.com/vega-un4",
             "author_name": "seller",
-            "file": SimpleUploadedFile("vega.lay", b"LAY", content_type="application/octet-stream"),
+            "file": SimpleUploadedFile("vega.lay", build_lay5(lay_object(6, width=50, points=[(0, 0), (1000, 0)]), 1, 0), content_type="application/octet-stream"),
         }
         response = self.client.post(reverse("catalog:pcb_create"), payload)
         self.assertEqual(response.status_code, 302)
@@ -97,7 +97,7 @@ class PCBUploadTests(TestCase):
             "developed_at": timezone.localdate().isoformat(),
             "receivers": [self.vega_341.pk],
             "author_name": "UA3XYZ",
-            "file": SimpleUploadedFile("old.lay", b"LAY", content_type="application/octet-stream"),
+            "file": SimpleUploadedFile("old.lay", build_lay5(lay_object(6, width=50, points=[(0, 0), (1000, 0)]), 1, 0), content_type="application/octet-stream"),
         }
         self.client.post(reverse("catalog:pcb_create"), payload)
         pcb = PCBFile.objects.get(title="Чужая плата")
@@ -122,7 +122,7 @@ class PCBUploadTests(TestCase):
             "kind": PCBFile.Kind.MODERN,
             "developed_at": timezone.localdate().isoformat(),
             "receivers": [self.vega_341.pk],
-            "file": SimpleUploadedFile("board.lay", b"LAY", content_type="application/octet-stream"),
+            "file": SimpleUploadedFile("board.lay", build_lay5(lay_object(6, width=50, points=[(0, 0), (1000, 0)]), 1, 0), content_type="application/octet-stream"),
             "photos": [jpeg("one.jpg"), jpeg("two.jpg")],
         }
         response = self.client.post(reverse("catalog:pcb_create"), payload)
@@ -569,3 +569,126 @@ class FrequencyResponseParserTests(TestCase):
         self.assertEqual(extract_specs("Полоса частот 300...3500 Гц.").get("frequency_response"), "300...3500 Гц")
         for text in ("Диапазон частот: ДВ 150…405 кГц.", "Диапазон частот от 65,8 до 74 мГц.", "Диапазон принимаемых частот 150 Гц"):
             self.assertNotIn("frequency_response", extract_specs(text), text)
+
+
+class LayToolsTests(TestCase):
+    """Цепи с перемычками, проверка, сравнение версий, запись LAY — на синтетических платах v5."""
+
+    def board(self, objects_spec):
+        objs = b"".join(lay_object(**spec) for spec in objects_spec)
+        pads = sum(1 for spec in objects_spec if spec["kind"] in (2, 8))
+        return build_lay5(objs, len(objects_spec), pads)
+
+    def base_spec(self):
+        return [
+            dict(kind=2, x=1000, y=-1000, out=100, inner=40),                   # 0: площадка A
+            dict(kind=2, x=3000, y=-1000, out=100, inner=40),                   # 1: площадка B
+            dict(kind=6, width=50, points=[(1000, -1000), (3000, -1000)]),     # 2: дорожка A—B
+            dict(kind=2, x=1000, y=-3000, out=100, inner=40),                   # 3: площадка C
+            dict(kind=2, x=3000, y=-3000, out=100, inner=40),                   # 4: площадка D
+            dict(kind=6, layer=2, width=20, points=[(1000, -1000), (1000, -3000)]),  # 5: перемычка A—C
+        ]
+
+    def test_nets_include_jumpers(self):
+        from catalog import lay, laytools
+
+        a = laytools.analyze(lay.parse(self.board(self.base_spec())))
+        self.assertEqual(len(a.jumpers), 1)
+        self.assertEqual(a.nets[0], a.nets[1])
+        self.assertEqual(a.nets[0], a.nets[3])           # через перемычку
+        self.assertNotEqual(a.nets[0], a.nets[4])
+        self.assertEqual(a.summary["jumpers"], 1)
+        self.assertEqual(a.summary["tht_pads"], 4)
+        self.assertEqual(dict(a.summary["drills"]), {0.8: 4})
+        self.assertEqual(a.issue_counts.get("single"), 1)  # D ни с чем не соединена
+
+    def test_drc_finds_small_clearance(self):
+        from catalog import lay, laytools
+
+        spec = self.base_spec()[:3] + [dict(kind=6, width=50, points=[(1500, -1070), (2500, -1070)])]  # зазор 0,2 мм
+        a = laytools.analyze(lay.parse(self.board(spec)))
+        self.assertGreaterEqual(a.issue_counts.get("clearance", 0), 1)
+        self.assertTrue(any(i.kind == "clearance" for i in a.issues))
+
+    def test_diff_detects_split(self):
+        from catalog import lay, laytools
+
+        old = lay.parse(self.board(self.base_spec()))
+        spec = self.base_spec()
+        spec[2] = dict(kind=6, width=50, points=[(1000, -1000), (1500, -1000)])   # дорожку оборвали
+        new = lay.parse(self.board(spec))
+        d = laytools.diff(old, new)
+        self.assertEqual(d.matched, 4)
+        self.assertEqual(len(d.splits), 1)
+        self.assertEqual(d.merges, [])
+
+    def test_render_marks_nets_and_print(self):
+        from catalog import lay, laytools
+
+        parsed = lay.parse(self.board(self.base_spec()))
+        a = laytools.analyze(parsed)
+        svg = lay.render_svg(parsed, nets=a.nets, markers=a.markers)
+        self.assertIn(f'data-net="{a.nets[0]}"', svg)
+        self.assertIn('data-layer="E"', svg)
+        printed = lay.render_print_svg(parsed, layer=3, mirror=True)
+        self.assertIn("scale(-1 1)", printed)
+        self.assertIn('fill="#ffffff"', printed)
+
+    def test_layedit_roundtrip(self):
+        from catalog.layedit import LayDoc
+
+        data = self.board(self.base_spec())
+        doc = LayDoc(data)
+        self.assertEqual(doc.to_bytes(), data)
+        doc.objects[2].points = [(1000.0, -1000.0), (2000.0, -1000.0)]
+        from catalog import lay
+
+        self.assertEqual(lay.parse(doc.to_bytes()).boards[0].objects[2].points[-1], (2000.0, -1000.0))
+
+
+class LayPagesTests(TestCase):
+    def setUp(self):
+        spec = LayToolsTests.base_spec(None)
+        objs = b"".join(lay_object(**s) for s in spec)
+        self.data = build_lay5(objs, len(spec), 4)
+        self.owner = User.objects.create_user("owner2", "o2@example.com", "owner2")
+        self.free = PCBFile.objects.create(title="Свободная", kind=PCBFile.Kind.MODERN, is_free=True,
+                                           created_by=self.owner, file=SimpleUploadedFile("f.lay", self.data))
+        self.paid = PCBFile.objects.create(title="Платная", kind=PCBFile.Kind.MODERN, is_free=False,
+                                           file=SimpleUploadedFile("p.lay", self.data))
+
+    def test_viewer_has_nets_and_summary(self):
+        page = self.client.get(reverse("catalog:pcb_preview", args=[self.free.pk]))
+        self.assertContains(page, "data-net=")
+        self.assertContains(page, "О плате")
+        self.assertNotContains(page, "Замечания проверки")       # гостю — без проверки
+        self.client.login(username="owner2", password="owner2")
+        page = self.client.get(reverse("catalog:pcb_preview", args=[self.free.pk]))
+        self.assertContains(page, "Проверка")
+        self.assertContains(page, 'data-layer="E"')
+
+    def test_print_page(self):
+        url = reverse("catalog:pcb_print", args=[self.free.pk])
+        page = self.client.get(url)
+        self.assertContains(page, "50 мм")
+        self.assertNotContains(page, "scale(-1 1)")
+        self.assertContains(self.client.get(url + "?mirror=1"), "scale(-1 1)")
+        self.assertEqual(self.client.get(reverse("catalog:pcb_print", args=[self.paid.pk])).status_code, 404)
+
+    def test_detail_summary_and_list_thumb(self):
+        self.assertContains(self.client.get(self.free.get_absolute_url()), "О плате")
+        listing = self.client.get(reverse("catalog:pcb_list"))
+        self.assertContains(listing, reverse("catalog:pcb_svg", args=[self.free.pk]))
+        self.assertNotContains(listing, reverse("catalog:pcb_svg", args=[self.paid.pk]))
+
+    def test_upload_rejects_placeholder_lay(self):
+        from catalog.forms import PCBUploadForm
+
+        cat = ReceiverCategory.objects.create(name="К", short_name="К", slug="k", code="k")
+        r = Receiver.objects.create(name="Вега", slug="vega-x", category=cat)
+        payload = {"title": "Т", "kind": PCBFile.Kind.MODERN, "developed_at": "2026-01-01", "receivers": [r.pk]}
+        bad = PCBUploadForm(payload, {"file": SimpleUploadedFile("x.lay", b"LAY")})
+        self.assertFalse(bad.is_valid())
+        self.assertIn("file", bad.errors)
+        good = PCBUploadForm(payload, {"file": SimpleUploadedFile("x.lay", self.data)})
+        self.assertTrue(good.is_valid(), good.errors)

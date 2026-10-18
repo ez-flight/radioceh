@@ -24,6 +24,8 @@
         {% with photos=pcb.photos.all %}
           {% if photos %}
             <img class="card-photo" src="{{ photos.0.image.url }}" alt="{{ pcb.title }}">
+          {% elif pcb.show_lay_thumb %}
+            <img class="card-lay" src="{% url 'catalog:pcb_svg' pcb.pk %}" alt="Рисунок платы {{ pcb.title }}" loading="lazy" onerror="this.remove()">
           {% endif %}
         {% endwith %}
         <div class="card-body">

@@ -100,6 +100,22 @@ class PCBUploadForm(forms.ModelForm):
         if not chips:
             self.fields["chips"].help_text = "Пока нет микросхем в справочнике — их добавит администратор."
 
+    def clean_file(self):
+        f = self.cleaned_data.get("file")
+        if f and f.name.lower().endswith((".lay", ".lay6")):
+            from catalog.lay import LayError, parse
+
+            f.seek(0)
+            data = f.read()
+            f.seek(0)
+            try:
+                parsed = parse(data)
+            except LayError as exc:
+                raise forms.ValidationError(f"Файл не читается как Sprint Layout 5/6: {exc}")
+            if not any(b.objects for b in parsed.boards):
+                raise forms.ValidationError("В файле Sprint Layout нет ни одного объекта.")
+        return f
+
     def clean_author_name(self):
         return (self.cleaned_data.get("author_name") or "").strip()
 

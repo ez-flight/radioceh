@@ -537,3 +537,57 @@ input, select, textarea {
   .hero, .layout-2, .footer-grid { grid-template-columns: 1fr; }
   .nav { width: 100%; }
 }
+
+/* Просмотрщик: панель сведений, подсветка цепей */
+.lay-body { flex: 1; min-height: 0; display: flex; }
+.lay-body .lay-stage { flex: 1; }
+.lay-panel {
+  width: 300px;
+  flex: none;
+  overflow: auto;
+  padding: 12px 14px;
+  background: #221c15;
+  border-left: 1px solid rgba(244, 234, 216, 0.12);
+  font-size: 14px;
+}
+.lay-panel h2 { font-size: 15px; margin: 16px 0 8px; color: var(--brass); }
+.lay-panel .meta { color: rgba(244, 234, 216, 0.6); font-size: 13px; }
+.lay-net { margin: 0; padding: 8px 10px; border-radius: 8px; background: rgba(212, 162, 74, 0.12); }
+.lay-summary { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.lay-summary dt { color: rgba(244, 234, 216, 0.6); }
+.lay-summary dd { margin: 0; }
+.lay-labels-title { margin: 12px 0 4px; color: rgba(244, 234, 216, 0.6); }
+.lay-labels { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+.lay-labels span { padding: 2px 8px; border-radius: 999px; background: rgba(244, 234, 216, 0.08); font-size: 13px; }
+.lay-issue-counts { margin: 0; padding-left: 18px; }
+.lay-ok { color: #7bd88f; }
+.lay-stage svg.net-active [data-net] { opacity: 0.25; }
+.lay-stage svg.net-active [data-net].net-hl { opacity: 1; filter: drop-shadow(0 0 0.4px #fff); }
+.lay-stage svg [data-net] { cursor: pointer; }
+@media (max-width: 760px) {
+  .lay-body { flex-direction: column; }
+  .lay-panel { width: auto; max-height: 40vh; border-left: 0; border-top: 1px solid rgba(244, 234, 216, 0.12); }
+}
+
+/* Страница платы: сводка */
+.detail .lay-summary dt { color: var(--muted); }
+.detail .lay-labels span { background: rgba(36, 28, 20, 0.06); }
+.detail .lay-labels-title { color: var(--muted); }
+.card-lay { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; }
+
+/* Печать 1:1 */
+.print-page { margin: 0; background: #e9e4da; color: #1b1712; font-family: system-ui, sans-serif; }
+.print-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #d8d0c0; }
+.print-bar h1 { font-size: 16px; margin: 0; flex: 1 1 100%; }
+.print-bar select, .print-bar button, .print-bar a { font: inherit; }
+.print-bar button { padding: 6px 14px; border-radius: 999px; border: 1px solid #1b1712; background: #1b1712; color: #fff; cursor: pointer; }
+.print-note { margin: 0; font-size: 13px; color: #6d5c48; flex: 1 1 100%; }
+.print-sheet { padding: 16px; overflow: auto; }
+.print-sheet svg { display: block; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); }
+@media print {
+  @page { margin: 10mm; }
+  .print-page { background: #fff; }
+  .print-bar { display: none; }
+  .print-sheet { padding: 0; overflow: visible; }
+  .print-sheet svg { box-shadow: none; }
+}

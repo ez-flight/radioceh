@@ -1,0 +1,17 @@
+{% with s=analysis.summary %}
+<dl class="lay-summary">
+  <dt>Размер</dt><dd>{{ s.size_mm.0 }} × {{ s.size_mm.1 }} мм</dd>
+  <dt>Медь</dt><dd>{{ s.copper_layers|join:", "|default:"—" }}</dd>
+  <dt>Отверстия</dt>
+  <dd>{% for d, n in s.drills %}{{ n }} × ⌀{{ d }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</dd>
+  <dt>Площадки</dt><dd>{{ s.tht_pads }} выводных, {{ s.smd_pads }} SMD</dd>
+  <dt>Детали</dt><dd>{{ s.components }}</dd>
+  <dt>Цепи</dt><dd>{{ s.nets }}</dd>
+  <dt>Перемычки</dt><dd>{% if s.jumpers %}{{ s.jumpers }} шт., всего {{ s.jumper_length_mm }} мм провода{% else %}нет{% endif %}</dd>
+  <dt>Формат</dt><dd>Sprint Layout {{ s.version }}</dd>
+</dl>
+{% if s.labels %}
+  <p class="lay-labels-title">Номиналы на маркировке</p>
+  <p class="lay-labels">{% for text, n in s.labels %}<span>{{ text }}{% if n > 1 %} ×{{ n }}{% endif %}</span>{% endfor %}</p>
+{% endif %}
+{% endwith %}

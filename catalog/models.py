@@ -380,9 +380,39 @@ class PCBFile(models.Model):
             return False
         return user.is_staff or user.pk in (self.created_by_id, self.author_id)
 
+    def can_review_file(self, user):
+        """Замечания проверки видят персонал и тот, кто плату загрузил или разработал."""
+        if not getattr(user, "is_authenticated", False):
+            return False
+        return user.is_staff or user.pk in (self.created_by_id, self.author_id)
+
     @property
     def is_lay(self):
         return self.file.name.lower().endswith((".lay", ".lay6"))
+
+    def lay_analysis(self):
+        """Сводка, цепи и проверка платы Sprint Layout или None, если файл не читается."""
+        from catalog.lay import LayError
+        from catalog.laytools import analyze_file
+
+        if not self.file or not self.is_lay:
+            return None
+        try:
+            return analyze_file(self.file.path)
+        except (LayError, OSError, ValueError):
+            return None
+
+    def lay_svg_nets(self, with_markers=False):
+        """SVG с разметкой цепей (data-net) и, по желанию, маркерами замечаний проверки."""
+        from catalog.lay import LayError
+        from catalog.laytools import svg_with_nets
+
+        if not self.file or not self.is_lay:
+            return None
+        try:
+            return svg_with_nets(self.file.path, with_markers)
+        except (LayError, OSError, ValueError):
+            return None
 
     def lay_svg(self):
         """SVG платы из файла Sprint Layout или None, если файл не читается."""

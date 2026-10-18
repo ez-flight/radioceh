@@ -7,6 +7,7 @@ https://github.com/sergey-raevskiy/xlay (lay6) и сверены на файла
 """
 
 import math
+import re
 import struct
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -99,6 +100,8 @@ class LayObject:
     text: str = ""
     points: list = field(default_factory=list)
     children: list = field(default_factory=list)
+    groups: tuple = ()
+    index: int = -1
 
 
 @dataclass
@@ -151,7 +154,8 @@ def _read_object(r, version, child=False, depth=0):
     if not child:
         obj.text = r.long_string()
         r.long_string()  # маркер
-        r.take(4 * r.count(4, MAX_OBJECTS))  # группы
+        n = r.count(4, MAX_OBJECTS)
+        obj.groups = struct.unpack(f"<{n}I", r.take(4 * n))
 
     if kind == OBJ_CIRCLE:
         return obj
@@ -193,6 +197,8 @@ def parse(data):
         r.take(24 + 8 + 8 + 1)  # подложки, центр, многослойность
         n = r.count(77, MAX_OBJECTS)
         objects = [_read_object(r, version) for _ in range(n)]
+        for i, obj in enumerate(objects):
+            obj.index = i
         for obj in objects:
             if obj.type in (OBJ_THT_PAD, OBJ_SMD_PAD):
                 r.take(4 * r.count(4, MAX_OBJECTS))  # соединения
@@ -323,8 +329,21 @@ class _SvgBuilder:
         return ""
 
 
-def render_svg(lay, board_index=0):
-    """SVG платы в миллиметрах; каждый слой — отдельная группа <g data-layer>."""
+_TAG = re.compile(r"<(path|circle|rect) ")
+
+
+def _net_attr(svg, net):
+    if net is None or not svg:
+        return svg
+    return _TAG.sub(rf'<\1 data-net="{net}" ', svg)
+
+
+def render_svg(lay, board_index=0, nets=None, markers=None):
+    """SVG платы в миллиметрах; каждый слой — отдельная группа <g data-layer>.
+
+    nets — {индекс объекта: номер цепи} для подсветки цепей; markers — [(x, y, текст)] в мм файла.
+    """
+    nets = nets or {}
     board = lay.boards[board_index]
     b = _SvgBuilder(lay)
     groups = []
@@ -337,7 +356,7 @@ def render_svg(lay, board_index=0):
             for o in board.objects:
                 if (o.layer == code or o.plated) and o.ground_distance > 0:
                     body.append(b.draw(o, BACKGROUND, grow=o.ground_distance * b.k * 2))
-        body.extend(b.draw(o, color) for o in on_layer)
+        body.extend(_net_attr(b.draw(o, color), nets.get(o.index)) for o in on_layer)
         if not any(body):
             continue
         groups.append(f'<g data-layer="{layer_id}" data-label="{escape(label)}" data-color="{color}">'
@@ -346,11 +365,19 @@ def render_svg(lay, board_index=0):
     plated = [o for o in board.objects if o.type == OBJ_THT_PAD and o.plated]
     if plated:
         groups.append(f'<g data-layer="M" data-label="Металлизация" data-color="{METAL_COLOR}">'
-                      + "".join(b.pad(o, METAL_COLOR) for o in plated) + "</g>")
+                      + "".join(_net_attr(b.pad(o, METAL_COLOR), nets.get(o.index)) for o in plated) + "</g>")
     drills = [b.drill(o) for o in board.objects if o.type == OBJ_THT_PAD]
     if any(drills):
         groups.append(f'<g data-layer="D" data-label="Отверстия" data-color="#3a3a3a" fill="{BACKGROUND}">'
                       + "".join(drills) + "</g>")
+
+    if markers:
+        k = b.k
+        dots = "".join(
+            f'<circle cx="{b.num(x * k)}" cy="{b.num(-y * k)}" r="0.9"><title>{escape(t)}</title></circle>'
+            for x, y, t in markers)
+        groups.append('<g data-layer="E" data-label="Замечания проверки" data-color="#ff3b30" '
+                      f'fill="none" stroke="#ff3b30" stroke-width="0.3">{dots}</g>')
 
     if b.min_x is math.inf:
         b.min_x = b.min_y = 0.0
@@ -367,6 +394,37 @@ def render_svg(lay, board_index=0):
         f'width="{n(w)}mm" height="{n(h)}mm" data-board="{escape(board.name)}">'
         f'<rect x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}" fill="{BACKGROUND}"/>'
         f'<g class="board">{content}</g></svg>'
+    )
+
+
+def render_print_svg(lay, layer=3, mirror=False, board_index=0):
+    """Слой меди в масштабе 1:1 для ЛУТ/фоторезиста: чёрная медь на белом, отверстия-метки, контур.
+
+    mirror=True — зеркально (для переноса тонера: рисунок ложится на плату лицом).
+    """
+    board = lay.boards[board_index]
+    b = _SvgBuilder(lay)
+    ink, paper = "#000000", "#ffffff"
+    copper = [o for o in board.objects
+              if o.layer == layer or (o.type == OBJ_THT_PAD and o.plated and layer in (1, 3))]
+    for o in board.objects:          # общая рамка — как у обычного вида
+        b.draw(o, ink)
+    body = "".join(b.draw(o, ink) for o in copper if not (o.type in (OBJ_POLY, OBJ_SMD_PAD) and o.cutoff))
+    body += "".join(b.draw(o, paper) for o in copper if o.type in (OBJ_POLY, OBJ_SMD_PAD) and o.cutoff)
+    outline = "".join(b.draw(o, ink) for o in board.objects if o.layer == 7)
+    holes = "".join(
+        f'<circle cx="{b.num(o.x * b.k)}" cy="{b.num(-o.y * b.k)}" r="{b.num(max(abs(o.inner) * b.k * 0.5, 0.2))}"/>'
+        for o in board.objects if o.type == OBJ_THT_PAD and (o.layer == layer or o.plated))
+    margin = 3.0
+    x, y = b.min_x - margin, b.min_y - margin
+    w, h = b.max_x - b.min_x + 2 * margin, b.max_y - b.min_y + 2 * margin
+    n = b.num
+    flip = f' transform="translate({n(2 * x + w)} 0) scale(-1 1)"' if mirror else ""
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{n(x)} {n(y)} {n(w)} {n(h)}" '
+        f'width="{n(w)}mm" height="{n(h)}mm"><rect x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}" fill="{paper}"/>'
+        f'<g{flip}><g stroke-opacity="1">{body}</g><g opacity="0.6">{outline}</g>'
+        f'<g fill="{paper}">{holes}</g></g></svg>'
     )
 
 

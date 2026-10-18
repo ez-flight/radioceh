@@ -1,0 +1,10 @@
+{% if analysis.issue_counts %}
+  <ul class="lay-issue-counts">
+    {% for kind, n in analysis.issue_counts.items %}
+      <li><b>{{ n }}</b> — {% for k, t in issue_titles.items %}{% if k == kind %}{{ t }}{% endif %}{% endfor %}</li>
+    {% endfor %}
+  </ul>
+  <p class="meta">Пороги: зазор и поясок площадки от 0,3 и 0,15 мм, дорожка от 0,25 мм. Неподключённые площадки бывают нормой (свободные выводы микросхем).</p>
+{% else %}
+  <p class="lay-ok">Замечаний нет.</p>
+{% endif %}

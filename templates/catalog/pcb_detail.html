@@ -62,6 +62,7 @@
         {% if pcb.file|file_kind == "pdf" or pcb.file|file_kind == "djvu" or lay_preview %}
           <a class="btn js-doc-window" href="{% url 'catalog:pcb_preview' pcb.pk %}">Смотреть</a>
         {% endif %}
+        {% if lay_preview %}<a class="btn secondary" href="{% url 'catalog:pcb_print' pcb.pk %}" target="_blank" rel="noopener">Печать 1:1</a>{% endif %}
         <a class="btn" href="{% url 'catalog:pcb_download' pcb.pk %}">Скачать файл</a>
       {% else %}
         <span class="meta">Файл в комплекте проекта</span>
@@ -70,6 +71,18 @@
     </p>
   </article>
   <aside class="grid">
+    {% if analysis %}
+      <div class="paper detail">
+        <h2>О плате</h2>
+        {% include "catalog/_lay_summary.html" %}
+        {% if can_review %}
+          <h2>Проверка</h2>
+          {% include "catalog/_lay_issues.html" %}
+        {% endif %}
+      </div>
+    {% elif pcb.is_lay and can_review %}
+      <div class="paper"><h2>Проверка</h2><p>Файл не читается как Sprint Layout 5/6.</p></div>
+    {% endif %}
     {% if pcb.products.all %}
       <div class="paper">
         <h2>В магазине</h2>
