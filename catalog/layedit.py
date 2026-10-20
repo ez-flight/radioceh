@@ -1,6 +1,6 @@
 """Побайтовое чтение и запись файла Sprint Layout (одна плата) для правки объектов.
 
-Поддержаны версии 5 и 6 без компонентов lay6 (у текстов v6 с флагом компонента — NotImplementedError).
+Поддержаны версии 5 и 6; блок компонента lay6 у текста переносится без разбора.
 Чтение+запись без правок даёт исходный файл байт в байт.
 """
 import struct
@@ -49,7 +49,7 @@ class Obj:
             return bytes(out)
         if self.type == 7:
             out += struct.pack("<I", len(self.children)) + b"".join(c.to_bytes() for c in self.children)
-            return bytes(out)
+            return bytes(out) + getattr(self, "comp", b"")
         out += struct.pack("<I", len(self.points)) + b"".join(struct.pack("<ff", *p) for p in self.points)
         return bytes(out)
 
@@ -71,15 +71,40 @@ def _read_obj(data, pos, toplevel=True):
         for _ in range(n):
             c, pos = _read_obj(data, pos, toplevel=False)
             children.append(c)
-        if hdr[23] == 1 and data[0] >= 6:
-            raise NotImplementedError("компоненты lay6 не поддержаны")
-        return Obj(hdr, text, marker, groups, children=children, toplevel=toplevel), pos
+        comp = b""
+        if hdr[23] == 1 and data[0] >= 6 and toplevel:
+            # блок компонента v6: f32, f32, u8, f64, строка корпуса, строка комментария, u8 — переносится как есть
+            start = pos; pos += 17
+            for _ in range(2):
+                pos += 4 + struct.unpack_from("<I", data, pos)[0]
+            pos += 1
+            comp = data[start:pos]
+        o = Obj(hdr, text, marker, groups, children=children, toplevel=toplevel)
+        o.comp = comp
+        return o, pos
     n = struct.unpack_from("<I", data, pos)[0]; pos += 4
     pts = [struct.unpack_from("<ff", data, pos + 8 * i) for i in range(n)]; pos += 8 * n
     return Obj(hdr, text, marker, groups, points=pts, toplevel=toplevel), pos
 
 
 ROUND, OCTAGON, SQUARE = 1, 2, 3          # формы выводных площадок
+
+
+def pad_points(shape, x, y, r):
+    """Точки выводной площадки, как их пишет Sprint: по ним он рисует медь площадки, а без точек Sprint 6
+    не открывает файл. Круг — отрезок-диаметр, квадрат — 4 угла, восьмиугольник — 8 вершин;
+    формы 4–9 вытянуты вдвое по X (4–6) или по Y (7–9)."""
+    base, stretch = (shape - 1) % 3, (shape - 1) // 3
+    sx, sy = (2, 1) if stretch == 1 else (1, 2) if stretch == 2 else (1, 1)
+    if base == 0:
+        return [(x + r, y), (x - r, y)] if stretch != 2 else [(x, y + r), (x, y - r)]
+    hx, hy = r * sx, r * sy
+    if base == 2:
+        return [(x - hx, y + hy), (x + hx, y + hy), (x + hx, y - hy), (x - hx, y - hy)]
+    c = r * (2 ** 0.5 - 1)                 # полсторона восьмиугольника
+    ex, ey = hx - r + c, hy - r + c
+    return [(x - hx, y + ey), (x - ex, y + hy), (x + ex, y + hy), (x + hx, y + ey),
+            (x + hx, y - ey), (x + ex, y - hy), (x - ex, y - hy), (x - hx, y - ey)]
 
 # Заголовки объектов, сохранённые самим Sprint Layout (v5 — _341_v2.lay, v6 — TA2003P…lay6). Новый объект
 # берёт заголовок у объекта того же типа из правимого файла, а если такого нет — отсюда; координаты,
@@ -165,6 +190,7 @@ class LayDoc:
         """Выводная площадка; drill >= diameter — отверстие без меди."""
         o = self._new(2, layer)
         self._xy(o, x, y)
+        o.points = [(px * self.unit, py * self.unit) for px, py in pad_points(shape, x, y, diameter / 2)]
         o.set("<f", 9, diameter / 2 * self.unit)
         o.set("<f", 13, drill / 2 * self.unit)
         o.hdr[23] = shape

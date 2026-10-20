@@ -117,6 +117,8 @@ class LayBoard:
 class LayFile:
     version: int
     boards: list
+    # «Информация о проекте» (Файл → Информация о проекте): заголовок, автор, фирма, комментарий
+    info: dict = field(default_factory=dict)
 
     @property
     def unit(self):
@@ -205,7 +207,47 @@ def parse(data):
         boards.append(LayBoard(name.strip(), size_x, size_y, ground_planes, objects))
     if not boards:
         raise LayError("В файле нет плат")
-    return LayFile(version, boards)
+    return LayFile(version, boards, _read_info(r))
+
+
+def _read_info(r):
+    """Хвост файла: u32 (номер активной платы?), три строки по 100 знаков, комментарий с длиной u32."""
+    try:
+        r.take(4)
+        title, author, company = (r.short_string(100).strip() for _ in range(3))
+        comment = r.long_string().strip()
+    except LayError:
+        return {}
+    info = {"title": title, "author": author, "company": company, "comment": comment}
+    return {k: v for k, v in info.items() if v}
+
+
+def pad_outline(obj):
+    """Контур выводной площадки в единицах файла, как его рисует Sprint — по точкам площадки:
+    ("circle", (x, y), r) | ("stadium", (x1, y1), (x2, y2), r) | ("polygon", [(x, y), …]).
+    Круг (формы 1, 4, 7) — 2 точки: у вытянутых это ось овала; квадрат (3, 6, 9) — 4 угла;
+    восьмиугольник (2, 5, 8) — 8 вершин. Если точек нет или их число не подходит к форме,
+    контур строится по форме без поворота."""
+    r = abs(obj.out)
+    x, y = obj.x, obj.y
+    shape = obj.shape if 1 <= obj.shape <= 9 else 1
+    base, stretch = (shape - 1) % 3, (shape - 1) // 3
+    pts = list(obj.points or [])
+    if base == 0:
+        if stretch == 0:
+            return ("circle", (x, y), r)
+        if len(pts) == 2 and pts[0] != pts[1]:
+            return ("stadium", pts[0], pts[1], r)
+        return ("stadium", (x - r, y), (x + r, y), r) if stretch == 1 else ("stadium", (x, y - r), (x, y + r), r)
+    if len(pts) == (8 if base == 1 else 4):
+        return ("polygon", pts)
+    hx = r * (2 if stretch == 1 else 1)
+    hy = r * (2 if stretch == 2 else 1)
+    if base == 2:
+        return ("polygon", [(x - hx, y + hy), (x + hx, y + hy), (x + hx, y - hy), (x - hx, y - hy)])
+    c = r * (1 - math.tan(math.pi / 8))
+    return ("polygon", [(x - hx + c, y - hy), (x + hx - c, y - hy), (x + hx, y - hy + c), (x + hx, y + hy - c),
+                        (x + hx - c, y + hy), (x - hx + c, y + hy), (x - hx, y + hy - c), (x - hx, y - hy + c)])
 
 
 class _SvgBuilder:
@@ -282,28 +324,25 @@ class _SvgBuilder:
                 f'{self.num(x1)} {self.num(y1)}" {common}/>')
 
     def pad(self, obj, color, grow=0.0):
-        r = abs(obj.out) * self.k + grow
-        cx, cy = self.pt(obj.x, obj.y)
-        shape = obj.shape if 1 <= obj.shape <= 9 else 1
-        base = (shape - 1) % 3  # 0 круг, 1 восьмиугольник, 2 квадрат
-        stretch = (shape - 1) // 3  # 0 обычная, 1 по горизонтали, 2 по вертикали
-        hx = r * (2 if stretch == 1 else 1)
-        hy = r * (2 if stretch == 2 else 1)
-        self._extend(cx - hx, cy - hy)
-        self._extend(cx + hx, cy + hy)
+        kind, *data = pad_outline(obj)
         n = self.num
-        if base == 2:
-            return f'<rect x="{n(cx - hx)}" y="{n(cy - hy)}" width="{n(2 * hx)}" height="{n(2 * hy)}" fill="{color}"/>'
-        if base == 1:
-            c = r * (1 - math.tan(math.pi / 8))
-            pts = [(-hx + c, -hy), (hx - c, -hy), (hx, -hy + c), (hx, hy - c),
-                   (hx - c, hy), (-hx + c, hy), (-hx, hy - c), (-hx, -hy + c)]
-            d = "".join(f"{'M' if i == 0 else 'L'}{n(cx + px)} {n(cy + py)}" for i, (px, py) in enumerate(pts))
-            return f'<path d="{d}Z" fill="{color}"/>'
-        if stretch == 0:
-            return f'<circle cx="{n(cx)}" cy="{n(cy)}" r="{n(r)}" fill="{color}"/>'
-        return (f'<rect x="{n(cx - hx)}" y="{n(cy - hy)}" width="{n(2 * hx)}" height="{n(2 * hy)}" '
-                f'rx="{n(r)}" fill="{color}"/>')
+        if kind == "circle":
+            (x, y), r = data
+            cx, cy = self.pt(x, y); rr = r * self.k + grow
+            self._extend(cx - rr, cy - rr); self._extend(cx + rr, cy + rr)
+            return f'<circle cx="{n(cx)}" cy="{n(cy)}" r="{n(rr)}" fill="{color}"/>'
+        if kind == "stadium":
+            a, b, r = data
+            (x1, y1), (x2, y2) = self.pt(*a), self.pt(*b)
+            w = 2 * (r * self.k + grow)
+            for px, py in ((x1, y1), (x2, y2)):
+                self._extend(px - w / 2, py - w / 2); self._extend(px + w / 2, py + w / 2)
+            return (f'<path d="M{n(x1)} {n(y1)}L{n(x2)} {n(y2)}" fill="none" stroke="{color}" '
+                    f'stroke-width="{n(w)}" stroke-linecap="round"/>')
+        pts = [self.pt(px, py) for px, py in data[0]]
+        d = "".join(f"{'M' if i == 0 else 'L'}{n(px)} {n(py)}" for i, (px, py) in enumerate(pts))
+        grow_attr = f' stroke="{color}" stroke-width="{n(2 * grow)}" stroke-linejoin="round"' if grow else ""
+        return f'<path d="{d}Z" fill="{color}"{grow_attr}/>'
 
     def drill(self, obj):
         r = abs(obj.inner) * self.k

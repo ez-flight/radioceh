@@ -424,6 +424,24 @@ class LayViewerTests(TestCase):
         self.assertIn('<circle cx="10" cy="15" r="1"', svg)
         self.assertIn('<circle cx="10" cy="15" r="0.4"/>', svg)
 
+    def test_project_info_from_trailer(self):
+        import struct
+
+        from catalog import lay
+
+        self.assertEqual(lay.parse(self.lay_bytes).info, {})
+
+        def s100(text):
+            b = text.encode("cp1251")
+            return bytes([len(b)]) + b + b"\xff" * (100 - len(b))
+
+        comment = "Комментарий".encode("cp1251")
+        trailer = struct.pack("<I", 0) + s100("Вега РП-241-1") + s100("Автор") + s100("") + struct.pack("<I", len(comment)) + comment
+        data = self.lay_bytes[:-311] + trailer
+        self.assertEqual(
+            lay.parse(data).info, {"title": "Вега РП-241-1", "author": "Автор", "comment": "Комментарий"}
+        )
+
     def test_rejects_broken_files(self):
         from catalog import lay
 
@@ -826,3 +844,163 @@ class LayPagesTests(TestCase):
         self.assertIn("file", bad.errors)
         good = PCBUploadForm(payload, {"file": SimpleUploadedFile("x.lay", self.data)})
         self.assertTrue(good.is_valid(), good.errors)
+
+
+class LayMacroTests(TestCase):
+    """Макросы .lmk: запись v5, чтение v4–v6, макрос из части платы."""
+
+    def doc(self):
+        from catalog.layedit import LayDoc
+        return LayDoc(build_lay5(b"", num_objects=0, num_pads=0))
+
+    def test_build_and_parse_v5(self):
+        from catalog.laymacro import build_macro, describe, parse_macro
+
+        d = self.doc()
+        d.add_pad(0, 0, 2.0, 0.8, shape=3)
+        d.add_pad(10, 0, 2.0, 0.8)
+        d.add_line([(-2, 2), (12, 2), (12, -2), (-2, -2), (-2, 2)], 0.2, layer=2)
+        data = build_macro(d.objects, 5, "Резистор С1-4")
+        m = parse_macro(data)
+        self.assertEqual((m.version, len(m.objects), len(m.pads)), (5, 3, 2))
+        self.assertEqual(m.description, "Резистор С1-4")
+        info = describe(m)
+        self.assertEqual(info["drills"], [(0.8, 2)])
+        self.assertEqual(info["size_mm"], (14.0, 4.0))
+        self.assertEqual(len(data) - data.index(b"\xd0\xe5\xe7"), 100 + 1 - 0)   # строка[100] + байт в конце
+
+    def test_parse_v4(self):
+        import struct
+
+        from catalog import lay
+        from catalog.laymacro import parse_macro
+
+        def head(kind, x=0, y=0, out=0, inner=0, width=0, layer=2, shape=1):
+            h = bytearray(75)
+            struct.pack_into("<B5i", h, 0, kind, x, y, out, inner, width)
+            h[22], h[23] = layer, shape
+            return bytes(h)
+
+        top = struct.pack("<II", 0, 0)                          # текст, группы
+        line = head(6, width=20) + top + struct.pack("<i", 2) + struct.pack("<4i", -1000, 0, 1000, 0)
+        pad = head(2, x=0, y=-1270, out=150, inner=40, layer=3) + top + struct.pack("<i", -1)
+        text = head(7, layer=2) + struct.pack("<I", 1) + b"+" + struct.pack("<I", 0) + struct.pack("<I", 1) \
+            + head(6, width=22, layer=2) + struct.pack("<i", 2) + struct.pack("<4i", 0, 0, 0, 100)
+        desc = "v4".encode("cp1251")
+        data = (b"\x04\x33\xaa\xff" + struct.pack("<I", 3) + line + pad + text + b"\0\0\0\0"
+                + bytes([len(desc)]) + desc + b"\0" * (100 - len(desc)) + b"\0")
+        m = parse_macro(data)
+        self.assertEqual([o.type for o in m.objects], [6, 2, 7])
+        self.assertEqual(m.objects[0].points, [(-1000.0, 0.0), (1000.0, 0.0)])
+        self.assertEqual((m.objects[1].y, m.objects[1].out, m.objects[1].inner), (-1270.0, 150.0, 40.0))
+        self.assertEqual(m.objects[2].text, "+")
+        self.assertEqual(len(m.objects[2].children), 1)
+        self.assertEqual(m.description, "v4")
+        svg = lay.render_svg(m.layfile())
+        self.assertIn("<circle", svg)
+
+    def test_rejects_garbage(self):
+        from catalog.laymacro import MacroError, parse_macro
+
+        for data in (b"LMK", b"\x07\x33\xaa\xff" + bytes(8), b"\x05\x33\xaa\xff\xff\xff\xff\x0f"):
+            with self.assertRaises(MacroError):
+                parse_macro(data)
+
+    def test_macro_from_board(self):
+        from catalog.laymacro import macro_from_board, parse_macro
+
+        d = self.doc()
+        d.add_line([(5, -5), (25, -5)], 0.5, layer=3)            # дорожка — в макрос не попадает
+        d.add_pad(10, -10, 2.0, 0.8, shape=3)
+        d.add_pad(20, -10, 2.0, 0.8)
+        d.add_line([(8, -8), (22, -8)], 0.2, layer=2)
+        d.add_pad(60, -10, 2.0, 0.8)                             # вне рамки
+        m = parse_macro(macro_from_board(d.to_bytes(), (0, -20, 30, 0), description="R"))
+        self.assertEqual(sorted(o.type for o in m.objects), [2, 2, 6])
+        first = m.pads[0]
+        self.assertEqual((round(first.x), round(first.y)), (0, 0))
+        self.assertEqual(round(m.pads[1].x / 100, 2), 10.0)
+
+
+class PadOutlineTests(TestCase):
+    """Площадки рисуются и измеряются по своим точкам, как в Sprint."""
+
+    def board(self, shape, points, out=100):
+        from catalog import lay
+        obj = lay_object(2, x=1000, y=-1000, out=out, inner=40, shape=shape, points=points)
+        return lay.parse(build_lay5(obj, num_objects=1, num_pads=1))
+
+    def test_round_pad_stays_circle(self):
+        from catalog import lay
+        L = self.board(1, [(1100, -1000), (900, -1000)])
+        self.assertEqual(lay.pad_outline(L.boards[0].objects[0])[0], "circle")
+
+    def test_rotated_oval_follows_points(self):
+        from shapely.geometry import Point
+
+        from catalog import lay
+        from catalog.laytools import object_geometry
+        d = 100 / 2 ** 0.5
+        L = self.board(4, [(1000 + d, -1000 + d), (1000 - d, -1000 - d)])
+        o = L.boards[0].objects[0]
+        self.assertEqual(lay.pad_outline(o)[0], "stadium")
+        g = object_geometry(o, L.unit)
+        self.assertTrue(g.contains(Point(10 + 1.4, -10 + 1.4)))  # вдоль наклонной оси овал длиннее
+        self.assertFalse(g.contains(Point(10 + 1.9, -10)))
+        self.assertIn('stroke-linecap="round"', lay.render_svg(L))
+
+    def test_rotated_square_by_corners(self):
+        from catalog import lay
+        from catalog.laytools import object_geometry
+        L = self.board(3, [(1000, -900), (1100, -1000), (1000, -1100), (900, -1000)])
+        o = L.boards[0].objects[0]
+        self.assertEqual(lay.pad_outline(o)[0], "polygon")
+        self.assertAlmostEqual(object_geometry(o, L.unit).area, 2.0, places=3)   # ромб с диагоналями 2 мм
+
+
+class NetlistSwapTests(TestCase):
+    """Сверка со списком соединений: концы двухвыводной детали равнозначны."""
+
+    def setUp(self):
+        from catalog import lay
+        objs = (lay_object(6, width=50, points=[(0, 0), (1000, 0)]) + lay_object(6, width=50, points=[(0, -500), (1000, -500)])
+                + b"".join(lay_object(2, x=x, y=y, out=100, inner=40) for x, y in ((0, 0), (1000, 0), (0, -500), (1000, -500))))
+        self.L = lay.parse(build_lay5(objs, num_objects=6, num_pads=4))
+        self.netlist = {"A": [(0, 0, "U1.1"), (10, -5, "R1.1")], "B": [(0, -5, "U1.2"), (10, 0, "R1.2")]}
+
+    def test_swapped_resistor_fails_without_swap(self):
+        from catalog.laytools import check_netlist
+        self.assertFalse(check_netlist(self.L, self.netlist).passed)
+
+    def test_swapped_resistor_passes_with_swap(self):
+        from catalog.laytools import check_netlist, swap_groups
+        groups = swap_groups(self.netlist, ["R"])
+        self.assertEqual(groups, [["R1.1", "R1.2"]])
+        r = check_netlist(self.L, self.netlist, swap=groups)
+        self.assertTrue(r.passed)
+        self.assertEqual(r.swapped, [(["R1.1", "R1.2"], ["B", "A"])])
+
+    def test_ics_are_not_swapped(self):
+        from catalog.laytools import swap_groups
+        self.assertEqual(swap_groups(self.netlist, ["DA"]), [])
+
+
+class PourAnchorsTests(TestCase):
+    """Заливка по нескольким опорным точкам: земля, распавшаяся на куски, заливается как одна цепь."""
+
+    def test_several_anchors_join_pieces(self):
+        from catalog import lay
+        from catalog.laypour import pour
+        from catalog.laytools import compute_nets
+        objs = (lay_object(6, width=20, layer=7, points=[(0, 0), (4000, 0), (4000, -2000), (0, -2000), (0, 0)])
+                + lay_object(2, x=500, y=-1000, out=100, inner=40) + lay_object(2, x=3500, y=-1000, out=100, inner=40))
+        data = build_lay5(objs, num_objects=3, num_pads=2)
+        one, _ = pour(data, (5, -10))
+        both, rep = pour(data, [(5, -10), (35, -10)])
+        nets = lambda d: compute_nets(lay.parse(d))[0]
+        pads = lambda d: [i for i, o in enumerate(lay.parse(d).boards[0].objects) if o.type == 2]
+        n1, n2 = nets(one), nets(both)
+        p1, p2 = pads(one), pads(both)
+        self.assertNotEqual(n1[p1[0]], n1[p1[1]])        # одна точка: вторая площадка считается чужой
+        self.assertEqual(n2[p2[0]], n2[p2[1]])           # две точки: заливка соединяет обе
+        self.assertEqual(rep.pieces, 1)

@@ -41,6 +41,10 @@ class Command(BaseCommand):
                 + (f"; без меди: {s['holes']}" if s["holes"] else "") + "\n"
                 f"  деталей {s['components']}, цепей {s['nets']}, перемычек {s['jumpers']} ({s['jumper_length_mm']} мм)"
                 + (f", из них проводов длиннее 15 мм: {s['wires']}" if s["wires"] else ""))
+            info = data.info
+            if info:
+                names = {"title": "заголовок", "author": "автор", "company": "фирма", "comment": "комментарий"}
+                self.stdout.write("  проект: " + "; ".join(f"{names[k]} «{v}»" for k, v in info.items()))
             if a.issue_counts:
                 counts = ", ".join(f"{ISSUE_TITLES[k].lower()}: {n}" for k, n in a.issue_counts.items())
                 self.stdout.write(self.style.WARNING(f"  проверка: {counts}"))

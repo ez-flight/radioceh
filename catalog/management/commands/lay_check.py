@@ -5,7 +5,7 @@ import sys
 from django.core.management.base import BaseCommand, CommandError
 
 from catalog import lay
-from catalog.laytools import check_netlist, export_netlist, plural
+from catalog.laytools import check_netlist, export_netlist, plural, swap_groups
 
 HELP_FORMAT = """Список соединений — CSV (цепь;x;y;метка, разделитель «;» или «,») или JSON {"цепь": [[x, y, "метка"], …]}.
 Координаты в мм как их печатают lay_info и lay_diff: y растёт вниз (в файле Sprint — вверх)."""
@@ -37,6 +37,9 @@ class Command(BaseCommand):
         parser.add_argument("board")
         parser.add_argument("netlist", nargs="?", help=HELP_FORMAT)
         parser.add_argument("--export", metavar="CSV", help="Записать список соединений платы (- — в консоль)")
+        parser.add_argument("--swap", metavar="R,C,L", default="",
+                            help="Префиксы обозначений деталей с равнозначными выводами (метки «R1.1», «R1.2»): "
+                                 "их концы можно поменять местами")
 
     def handle(self, *args, **opts):
         try:
@@ -61,8 +64,11 @@ class Command(BaseCommand):
             netlist = read_netlist(opts["netlist"])
         except (OSError, ValueError, IndexError, json.JSONDecodeError) as exc:
             raise CommandError(f"Список соединений не читается: {exc}")
-        r = check_netlist(lay_file, netlist)
+        prefixes = [p.strip() for p in opts["swap"].split(",") if p.strip()]
+        r = check_netlist(lay_file, netlist, swap=swap_groups(netlist, prefixes) if prefixes else ())
         self.stdout.write(f"Цепей в списке: {r.nets}, собраны верно: {r.ok}")
+        for labels, nets in r.swapped:
+            self.stdout.write(f"  выводы {', '.join(labels)} переставлены: {', '.join(f'{lb} → {n}' for lb, n in zip(labels, nets))}")
         for name, pieces in r.broken:
             self.stdout.write(self.style.ERROR(f"  {name}: разорвана на {len(pieces)} {plural(len(pieces), 'кусок', 'куска', 'кусков')} — "
                                                + " | ".join(", ".join(p) for p in pieces)))

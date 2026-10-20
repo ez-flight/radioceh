@@ -35,21 +35,14 @@ def object_geometry(o, unit):
         g = LineString(pts) if len(pts) > 1 else Point(pts[0])
         return g.buffer(w / 2, quad_segs=6)
     if t == lay.OBJ_THT_PAD:
-        r = abs(o.out) * k
-        x, y = o.x * k, o.y * k
-        s = o.shape if 1 <= o.shape <= 9 else 1
-        base, stretch = (s - 1) % 3, (s - 1) // 3
-        hx = r * (2 if stretch == 1 else 1)
-        hy = r * (2 if stretch == 2 else 1)
-        if base == 2:
-            return box(x - hx, y - hy, x + hx, y + hy)
-        if base == 1:
-            c = r * (1 - math.tan(math.pi / 8))
-            return Polygon([(x - hx + c, y - hy), (x + hx - c, y - hy), (x + hx, y - hy + c), (x + hx, y + hy - c),
-                            (x + hx - c, y + hy), (x - hx + c, y + hy), (x - hx, y + hy - c), (x - hx, y - hy + c)])
-        if stretch == 0:
-            return Point(x, y).buffer(r, quad_segs=8)
-        return LineString([(x - (hx - r), y - (hy - r)), (x + (hx - r), y + (hy - r))]).buffer(r, quad_segs=8)
+        kind, *data = lay.pad_outline(o)
+        if kind == "circle":
+            (x, y), r = data
+            return Point(x * k, y * k).buffer(r * k, quad_segs=8)
+        if kind == "stadium":
+            (x1, y1), (x2, y2), r = data
+            return LineString([(x1 * k, y1 * k), (x2 * k, y2 * k)]).buffer(r * k, quad_segs=8)
+        return Polygon([(x * k, y * k) for x, y in data[0]]).buffer(0)
     if t in (lay.OBJ_POLY, lay.OBJ_SMD_PAD) and len(o.points) >= 3:
         g = Polygon([(x * k, y * k) for x, y in o.points]).buffer(0)
         if t == lay.OBJ_POLY and 0 < o.line_width * k < 20:
@@ -427,6 +420,7 @@ class NetCheck:
     broken: list               # [(цепь, [[метки куска], …])]
     shorts: list               # [(цепь, цепь, метка)] — разные цепи списка на одной меди
     missing: list              # [(цепь, метка, x, y, причина)] — точка не на меди или на нескольких цепях
+    swapped: list = field(default_factory=list)   # [(метки группы, цепи после перестановки)] — равнозначные выводы
 
     @property
     def passed(self):
@@ -450,10 +444,71 @@ def _locator(lay_file, board_index=0):
     return at
 
 
-def check_netlist(lay_file, netlist, board_index=0):
+def swap_groups(netlist, prefixes):
+    """Группы равнозначных выводов по меткам вида «R1.1»: у детали с обозначением на один из префиксов
+    и ровно двумя выводами в списке концы можно поменять местами (резистор, неполярный конденсатор,
+    катушка). У трёхвыводной детали (потенциометр) равнозначны выводы 1 и 3."""
+    pins = defaultdict(list)
+    for name, points in netlist.items():
+        for x, y, label in points:
+            ref, dot, num = str(label).rpartition(".")
+            if dot and ref and any(ref.upper().startswith(pfx.upper()) for pfx in prefixes) and ref[len(ref.rstrip("0123456789")):]:
+                pins[ref].append((num, label))
+    groups = []
+    for ref, items in pins.items():
+        nums = {n: lb for n, lb in items}
+        if len(items) == 2:
+            groups.append([lb for _, lb in items])
+        elif len(items) == 3 and {"1", "3"} <= set(nums):
+            groups.append([nums["1"], nums["3"]])
+    return groups
+
+
+def _apply_swaps(netlist, groups, at):
+    """Для каждой группы равнозначных выводов выбрать перестановку цепей, лучше всего совпадающую с медью."""
+    where = {}                                         # метка -> (цепь, x, y)
+    for name, points in netlist.items():
+        for x, y, label in points:
+            where[label] = (name, x, y)
+    in_group = {lb for g in groups for lb in g}
+    piece_of = {}
+    for lb, (name, x, y) in where.items():
+        found = at(x, y)
+        piece_of[lb] = next(iter(found)) if len(found) == 1 else None
+    # куски меди, на которых стоят «неподвижные» выводы каждой цепи
+    home = defaultdict(Counter)
+    for lb, (name, x, y) in where.items():
+        if lb not in in_group and piece_of[lb] is not None:
+            home[name][piece_of[lb]] += 1
+    from itertools import permutations
+    swapped = []
+    for g in groups:
+        g = [lb for lb in g if lb in where]
+        nets = [where[lb][0] for lb in g]
+        if len(set(nets)) < 2:
+            continue
+        score = lambda perm: sum(home[n][piece_of[lb]] > 0 for lb, n in zip(g, perm) if piece_of[lb] is not None)
+        best = max(permutations(nets), key=score)
+        if score(best) > score(tuple(nets)):
+            for lb, n in zip(g, best):
+                where[lb] = (n,) + where[lb][1:]
+            swapped.append((g, list(best)))
+    out = defaultdict(list)
+    for name, points in netlist.items():
+        for x, y, label in points:
+            out[where[label][0]].append((x, y, label))
+    return dict(out), swapped
+
+
+def check_netlist(lay_file, netlist, board_index=0, swap=()):
     """netlist: {цепь: [(x, y, метка), …]} в мм файла (ось Y вверх). Каждая цепь должна быть одним
-    куском меди (с учётом перемычек), и разные цепи не должны сходиться на одной меди."""
+    куском меди (с учётом перемычек), и разные цепи не должны сходиться на одной меди.
+    swap — группы меток равнозначных выводов (см. swap_groups): внутри группы цепи можно переставить,
+    если так плата сходится со списком лучше; перестановки попадают в NetCheck.swapped."""
     at = _locator(lay_file, board_index)
+    swapped = []
+    if swap:
+        netlist, swapped = _apply_swaps(netlist, swap, at)
     broken, shorts, missing, owner = [], [], [], {}
     for name, points in netlist.items():
         pieces = defaultdict(list)
@@ -471,7 +526,7 @@ def check_netlist(lay_file, netlist, board_index=0):
             owner.setdefault(cid, name)
     bad = {b[0] for b in broken} | {m[0] for m in missing} | {s[0] for s in shorts} | {s[1] for s in shorts}
     ok = sum(1 for name in netlist if name not in bad)
-    return NetCheck(nets=len(netlist), ok=ok, broken=broken, shorts=shorts, missing=missing)
+    return NetCheck(nets=len(netlist), ok=ok, broken=broken, shorts=shorts, missing=missing, swapped=swapped)
 
 
 def export_netlist(lay_file, board_index=0):

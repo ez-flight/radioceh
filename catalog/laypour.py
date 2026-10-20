@@ -60,20 +60,27 @@ def thermal_cut(area, pads, gap=0.4, spoke=0.6):
 
 def pour(data, at, layer=3, clearance=0.4, edge=0.6, min_neck=0.5, region=None, min_area=1.0,
          thermal=True):
-    """data — файл (байты), at — точка (x, y) в мм файла на меди нужной цепи, region — ограничение
-    (shapely, мм файла). Многоугольники пишутся в начало списка объектов — под площадки и дорожки.
-    Возвращает (новый файл, PourReport)."""
+    """data — файл (байты), at — точка (x, y) в мм файла на меди нужной цепи или список таких точек:
+    их цепи заливаются как одна (нужно, когда земля держалась на старой заливке и после её снятия
+    распалась на куски). region — ограничение (shapely, мм файла). Многоугольники пишутся в начало
+    списка объектов — под площадки и дорожки. Возвращает (новый файл, PourReport)."""
     lay_file = lay.parse(data)
     doc = LayDoc(data)
     nets, _, shapes = compute_nets(lay_file)
     on_layer = [(idx, g) for idx, lyr, g in shapes if lyr == layer]
-    p = Point(*at)
-    hits = [idx for idx, g in on_layer if g.distance(p) < 0.05]
-    if not hits:
-        raise ValueError(f"В точке ({at[0]}; {-at[1]}) нет меди на слое {layer}")
-    target = nets[hits[0]]
-    own = unary_union([g for idx, g in on_layer if nets.get(idx) == target])
-    foreign = unary_union([g for idx, g in on_layer if nets.get(idx) != target])
+    points = [at] if isinstance(at[0], (int, float)) else list(at)
+    targets = []
+    for x, y in points:
+        p = Point(x, y)
+        hits = [idx for idx, g in on_layer if g.distance(p) < 0.05]
+        if not hits:
+            raise ValueError(f"В точке ({x}; {-y}) нет меди на слое {layer}")
+        if nets[hits[0]] not in targets:
+            targets.append(nets[hits[0]])
+    target = targets[0]
+    mine = lambda idx: nets.get(idx) in targets
+    own = unary_union([g for idx, g in on_layer if mine(idx)])
+    foreign = unary_union([g for idx, g in on_layer if not mine(idx)])
 
     outline = board_outline(lay_file)
     if outline is not None:
@@ -90,7 +97,7 @@ def pour(data, at, layer=3, clearance=0.4, edge=0.6, min_neck=0.5, region=None, 
     if thermal:
         objs = lay_file.boards[0].objects
         own_pads = [g for idx, g in on_layer
-                    if nets.get(idx) == target and objs[idx].type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)]
+                    if mine(idx) and objs[idx].type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)]
         area = thermal_cut(area, own_pads)
 
     pieces = [g for g in getattr(area, "geoms", [area]) if g.geom_type == "Polygon" and g.area >= min_area]
