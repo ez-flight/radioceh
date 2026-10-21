@@ -59,10 +59,11 @@ def thermal_cut(area, pads, gap=0.4, spoke=0.6):
 
 
 def pour(data, at, layer=3, clearance=0.4, edge=0.6, min_neck=0.5, region=None, min_area=1.0,
-         thermal=True):
+         thermal=True, solid_at=()):
     """data — файл (байты), at — точка (x, y) в мм файла на меди нужной цепи или список таких точек:
     их цепи заливаются как одна (нужно, когда земля держалась на старой заливке и после её снятия
-    распалась на куски). region — ограничение (shapely, мм файла). Многоугольники пишутся в начало
+    распалась на куски). solid_at — точки площадок, которые подключаются сплошь, без теплового барьера
+    (например, крепёжное отверстие под винт). region — ограничение (shapely, мм файла). Многоугольники пишутся в начало
     списка объектов — под площадки и дорожки. Возвращает (новый файл, PourReport)."""
     lay_file = lay.parse(data)
     doc = LayDoc(data)
@@ -96,8 +97,10 @@ def pour(data, at, layer=3, clearance=0.4, edge=0.6, min_neck=0.5, region=None, 
         area = area.buffer(-min_neck / 2).buffer(min_neck / 2)
     if thermal:
         objs = lay_file.boards[0].objects
+        solid = [Point(*q) for q in solid_at]
         own_pads = [g for idx, g in on_layer
-                    if mine(idx) and objs[idx].type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)]
+                    if mine(idx) and objs[idx].type in (lay.OBJ_THT_PAD, lay.OBJ_SMD_PAD)
+                    and not any(g.contains(q) for q in solid)]
         area = thermal_cut(area, own_pads)
 
     pieces = [g for g in getattr(area, "geoms", [area]) if g.geom_type == "Polygon" and g.area >= min_area]

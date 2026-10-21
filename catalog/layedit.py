@@ -228,6 +228,21 @@ class LayDoc:
         from catalog.layfont import strokes
         return [self.add_line(poly, width, layer) for poly in strokes(text, x, y, height, anchor)]
 
+    def convert(self, version):
+        """Перевести файл в другую версию (5 ⇄ 6): длины ×/÷ 100 (1/100 мм ⇄ 1/10 000 мм), углы ×/÷ 1000,
+        блок компонента v6 у текстов при переходе в v5 отбрасывается. Неразобранные поля переносятся как есть."""
+        if version == self.version:
+            return self
+        if {version, self.version} != {5, 6}:
+            raise ValueError("Перевод только между версиями 5 и 6")
+        pre = bytearray(self.prefix)
+        pre[0] = version
+        _conv_board_hdr(pre, 8, version)
+        self.prefix = bytes(pre)
+        for o in self.objects:
+            _conv_obj(o, version)
+        return self
+
     def to_bytes(self):
         out = bytearray(self.prefix)
         out += struct.pack("<I", len(self.objects))
@@ -236,3 +251,66 @@ class LayDoc:
         out += b"\x00\x00\x00\x00" * sum(1 for o in self.objects if o.type in (2, 8))
         out += self.trailer
         return bytes(out)
+
+
+BOARD_HDR = 530   # запись платы до числа объектов
+
+
+def _conv_board_hdr(buf, b, version):
+    """Размеры платы (смещения 35, 39) и сетка (50, f64) в записи платы, начинающейся с b."""
+    k = 100.0 if version == 6 else 0.01
+    for off in (35, 39):
+        struct.pack_into("<I", buf, b + off, int(round(struct.unpack_from("<I", buf, b + off)[0] * k)))
+    struct.pack_into("<d", buf, b + 50, struct.unpack_from("<d", buf, b + 50)[0] * k)
+
+
+def _conv_obj(o, version):
+    """Объект в другую версию: длины ×/÷ 100, углы ×/÷ 1000; блок компонента v6 при переходе в v5 отбрасывается."""
+    k = 100.0 if version == 6 else 0.01
+    ka = 1000.0 if version == 6 else 0.001
+    for off in (1, 5, 9, 13):
+        o.set("<f", off, o.get("<f", off) * k)
+    if o.type in (4, 6):
+        o.set("<I", 17, int(round(o.get("<I", 17) * k)))
+    if o.type == 5:
+        o.set("<I", 17, int(round(o.get("<I", 17) * ka)))
+        o.set("<I", 31, int(round(o.get("<I", 31) * ka)))
+    o.set("<I", 41, int(round(o.get("<I", 41) * k)))
+    if o.points is not None:
+        o.points = [(x * k, y * k) for x, y in o.points]
+    for c in o.children or []:
+        _conv_obj(c, version)
+    if version == 5 and hasattr(o, "comp"):
+        o.comp = b""
+    if version == 6 and o.type == 7 and o.toplevel and o.hdr[23] == 1 and not getattr(o, "comp", b""):
+        # в v6 у такого текста обязателен блок компонента: пустой (нули, две пустые строки, u8)
+        o.comp = bytes(17) + bytes(4) + bytes(4) + bytes(1)
+
+
+def convert_file(data, version):
+    """Перевести весь файл (любое число плат) между версиями 5 и 6. Соединения площадок и хвост файла
+    переносятся как есть."""
+    src = data[0]
+    if src not in (5, 6) or data[1:4] != b"\x33\xaa\xff":
+        raise ValueError("Нужен файл Sprint Layout 5/6")
+    if src == version:
+        return bytes(data)
+    if {src, version} != {5, 6}:
+        raise ValueError("Перевод только между версиями 5 и 6")
+    nb = struct.unpack_from("<I", data, 4)[0]
+    out = bytearray(data[:8]); out[0] = version
+    pos = 8
+    for _ in range(nb):
+        hdr = bytearray(data[pos:pos + BOARD_HDR]); _conv_board_hdr(hdr, 0, version)
+        out += hdr; pos += BOARD_HDR
+        n = struct.unpack_from("<I", data, pos)[0]; out += data[pos:pos + 4]; pos += 4
+        objs = []
+        for _ in range(n):
+            o, pos = _read_obj(data, pos); objs.append(o)
+        for o in objs:
+            _conv_obj(o, version); out += o.to_bytes()
+        for o in objs:                                 # соединения: индексы объектов, без пересчёта
+            if o.type in (2, 8):
+                k = struct.unpack_from("<I", data, pos)[0]
+                out += data[pos:pos + 4 + 4 * k]; pos += 4 + 4 * k
+    return bytes(out + data[pos:])

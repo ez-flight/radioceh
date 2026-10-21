@@ -1004,3 +1004,71 @@ class PourAnchorsTests(TestCase):
         self.assertNotEqual(n1[p1[0]], n1[p1[1]])        # одна точка: вторая площадка считается чужой
         self.assertEqual(n2[p2[0]], n2[p2[1]])           # две точки: заливка соединяет обе
         self.assertEqual(rep.pieces, 1)
+
+
+class LayConvertTests(TestCase):
+    """Перевод файла между версиями 5 и 6 сохраняет геометрию и связи."""
+
+    def test_v5_to_v6_and_back(self):
+        from catalog import lay
+        from catalog.layedit import LayDoc
+        from catalog.laytools import compute_nets
+        objs = (lay_object(6, width=50, points=[(0, 0), (1000, 0)]) + lay_object(2, x=0, y=0, out=100, inner=40)
+                + lay_object(2, x=1000, y=0, out=100, inner=40) + lay_object(5, x=500, y=-500, out=210, inner=190, width=90))
+        data = build_lay5(objs, num_objects=4, num_pads=2)
+        d6 = LayDoc(data).convert(6).to_bytes()
+        L6 = lay.parse(d6)
+        self.assertEqual(L6.version, 6)
+        self.assertAlmostEqual(L6.boards[0].objects[1].out, 10000.0)
+        self.assertEqual(L6.boards[0].objects[3].line_width, 90000)            # конечный угол дуги: 90° → 90000
+        back = LayDoc(d6).convert(5).to_bytes()
+        self.assertEqual(back, data)
+        nets = compute_nets(lay.parse(back))[0]
+        self.assertEqual(nets[1], nets[2])
+
+
+class ConvertFileTests(TestCase):
+    """convert_file: файл с несколькими платами и непустыми соединениями переводится 5 → 6 → 5 без потерь."""
+
+    def test_two_boards_with_connections(self):
+        import struct
+
+        from catalog import lay
+        from catalog.layedit import convert_file
+        objs = lay_object(2, x=0, y=0, out=100, inner=40) + lay_object(2, x=1000, y=0, out=100, inner=40)
+        one = build_lay5(objs, num_objects=2, num_pads=2)
+        board = one[8:8 + 534] + objs + struct.pack("<II", 1, 1) + struct.pack("<I", 0)   # площадка 0 связана с 1
+        trailer = one[8 + 534 + len(objs) + 8:]
+        data = b"\x05\x33\xaa\xff" + struct.pack("<I", 2) + board + board + trailer
+        self.assertEqual(len(lay.parse(data).boards), 2)
+        d6 = convert_file(data, 6)
+        L6 = lay.parse(d6)
+        self.assertEqual((L6.version, len(L6.boards)), (6, 2))
+        self.assertAlmostEqual(L6.boards[1].objects[1].x, 100000.0)
+        self.assertAlmostEqual(L6.boards[1].size_x, 500000)
+        self.assertEqual(convert_file(d6, 5), data)
+
+
+class PourSolidTests(TestCase):
+    """solid_at: площадка в заливке без теплового барьера."""
+
+    def test_solid_pad_has_no_relief(self):
+        from shapely.geometry import Point
+        from shapely.ops import unary_union
+
+        from catalog import lay
+        from catalog.laypour import pour
+        from catalog.laytools import compute_nets
+        objs = (lay_object(6, width=20, layer=7, points=[(0, 0), (4000, 0), (4000, -2000), (0, -2000), (0, 0)])
+                + lay_object(2, x=2000, y=-1000, out=150, inner=100))
+        data = build_lay5(objs, num_objects=2, num_pads=1)
+        ring = Point(20, -10).buffer(2.0).difference(Point(20, -10).buffer(1.5))
+
+        def cover(d):
+            L = lay.parse(d); o = L.boards[0].objects
+            g = unary_union([s for i, _, s in compute_nets(L)[2] if s is not None and o[i].type == 4])
+            return g.intersection(ring).area / ring.area
+        relief, _ = pour(data, (20, -10))
+        solid, _ = pour(data, (20, -10), solid_at=[(20, -10)])
+        self.assertLess(cover(relief), 0.8)
+        self.assertGreater(cover(solid), 0.99)
